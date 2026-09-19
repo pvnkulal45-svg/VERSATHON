@@ -1,0 +1,11 @@
+import FileUpload from '../components/FileUpload'
+
+function UploadPage() {
+  return (
+    <main>
+      <FileUpload />
+    </main>
+  )
+}
+
+export default UploadPage
