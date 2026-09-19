@@ -1,8 +1,7 @@
-import UploadPage from './pages/UploadPage'
-import './App.css'
+import TopicsPage from "./pages/TopicsPage";
 
 function App() {
-  return <UploadPage />
+  return <TopicsPage />;
 }
 
-export default App
+export default App;
