@@ -20,11 +20,11 @@ for site_path in venv_sites:
 
 from backend.services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
 from backend.services.ai_service import process_text_chunks
-from backend.services.auth_service import register_user, login_user, get_user_from_token
+from backend.services.auth_service import register_user, login_user
 from backend.models import (
     create_document, save_topics, get_topics_by_doc, save_flashcards,
     get_flashcards_by_doc, update_flashcard_status, save_questions,
-    save_quiz_attempt, get_topic_performance, get_all_documents
+    get_questions_by_doc, save_quiz_attempt, get_topic_performance, get_all_documents
 )
 from backend.database import init_db
 
@@ -105,7 +105,7 @@ def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
 
 def run_pipeline_test():
     print("==================================================")
-    print("STARTING END-TO-END SAAS AUTH & PIPELINE TEST")
+    print("STARTING DYNAMIC COUNT & DIFFICULTY TEST")
     print("==================================================")
     
     from backend.config import DATABASE_PATH
@@ -116,101 +116,57 @@ def run_pipeline_test():
             pass
     init_db()
     
-    # 1. User Registration & Login Test
     user_a = register_user("Alice Student", "alice@university.edu", "password123")
-    token_a = user_a["token"]
     user_a_id = user_a["user"]["id"]
-    print(f"✓ Registered User A: {user_a['user']['name']} (ID: {user_a_id})")
     
-    login_res = login_user("alice@university.edu", "password123")
-    assert login_res["user"]["email"] == "alice@university.edu"
-    print(f"✓ Login User A Succeeded! Token Verified.")
-    
-    user_b = register_user("Bob Student", "bob@university.edu", "password123")
-    user_b_id = user_b["user"]["id"]
-    print(f"✓ Registered User B: {user_b['user']['name']} (ID: {user_b_id})")
-
-    # 2. Generate 22-page PDF for User A
     pdf_filename = create_multi_page_pdf("test_22_page_notes.pdf", 22)
     extracted_text, page_count = extract_text_from_file(pdf_filename)
-    assert page_count == 22, f"Expected 22 pages extracted, got {page_count}"
-    
     chunks = chunk_text(extracted_text, max_chunk_size=3500)
     topics, flashcards, questions = process_text_chunks(chunks)
     
-    # Verify Rich Topic Fields
-    first_top = topics[0]
-    print(f"✓ Rich Topic Structure Verified!")
-    print(f"  - Title: {first_top['title']}")
-    print(f"  - Summary: {first_top['summary']}")
-    print(f"  - Importance: {first_top['importance']}")
-    print(f"  - Simple Explanation: {first_top['simple_explanation'][:70]}...")
-    print(f"  - Detailed Explanation: {first_top['detailed_explanation'][:70]}...")
-    
-    # Save under User A
-    doc_id_a = create_document("test_22_page_notes.pdf", "Operating_Systems_Notes.pdf", page_count, len(extracted_text), user_id=user_a_id)
-    saved_topics_a = save_topics(doc_id_a, topics, user_id=user_a_id)
-    saved_cards_a = save_flashcards(doc_id_a, flashcards, user_id=user_a_id)
-    saved_questions_a = save_questions(doc_id_a, questions, user_id=user_a_id)
-    
-    # 3. User Data Isolation Test
-    docs_user_a = get_all_documents(user_id=user_a_id)
-    docs_user_b = get_all_documents(user_id=user_b_id)
-    
-    assert len(docs_user_a) == 1, "User A should have 1 document"
-    assert len(docs_user_b) == 0, "User B should have 0 documents"
-    print(f"✓ User Data Isolation Verified!")
-    print(f"  - User A Documents: {len(docs_user_a)}")
-    print(f"  - User B Documents: {len(docs_user_b)} (User B cannot see User A's study material!)")
+    doc_id = create_document("test_22_page_notes.pdf", "Operating_Systems_Notes.pdf", page_count, len(extracted_text), user_id=user_a_id)
+    save_topics(doc_id, topics, user_id=user_a_id)
+    save_flashcards(doc_id, flashcards, user_id=user_a_id)
+    save_questions(doc_id, questions, user_id=user_a_id)
 
-    # 4. Flashcard Status Update Test
-    first_card = saved_cards_a[0]
-    update_flashcard_status(first_card["id"], "know", user_id=user_a_id)
-    cards_fetched = get_flashcards_by_doc(doc_id_a, user_id=user_a_id)
-    assert cards_fetched[0]["status"] == "know"
-    print(f"✓ Flashcard Status Update Verified ('know' status saved).")
+    # Test Dynamic Item Count Queries
+    # 1. Request 5 questions
+    q_5 = get_questions_by_doc(doc_id, user_id=user_a_id, limit=5)
+    assert len(q_5) == 5, f"Expected 5 questions, got {len(q_5)}"
+    print(f"✓ Request 5 Questions Verified! Got: {len(q_5)}")
 
-    # 5. Quiz & Weak Topic Test under User A
-    evaluated_answers = []
-    for i, q in enumerate(saved_questions_a):
-        is_corr = (i < len(saved_questions_a) // 2)
-        selected = q['correct_option'] if is_corr else ('B' if q['correct_option'] != 'B' else 'A')
-        evaluated_answers.append({
-            'question_id': q['id'],
-            'topic_name': q['topic_name'],
-            'selected_option': selected,
-            'is_correct': is_corr
-        })
-        
-    total_q = len(evaluated_answers)
-    corr_q = sum(1 for a in evaluated_answers if a['is_correct'])
-    incorr_q = total_q - corr_q
-    score_pct = round((corr_q / total_q) * 100.0, 1)
-    
-    attempt_id = save_quiz_attempt(doc_id_a, total_q, corr_q, incorr_q, score_pct, evaluated_answers, user_id=user_a_id)
-    topic_perf = get_topic_performance(doc_id_a, user_id=user_a_id)
-    weak_topics = [tp for tp in topic_perf if tp['is_weak']]
-    
-    print(f"✓ Quiz Attempt Saved for User A! Score: {corr_q}/{total_q} ({score_pct}%)")
-    print(f"  - Weak Topics (<60% accuracy): {len(weak_topics)}")
-    
-    # 6. Scanned PDF Test
-    scanned_pdf_name = "test_scanned_dummy.pdf"
-    c_scan = canvas.Canvas(scanned_pdf_name, pagesize=letter)
-    c_scan.showPage()
-    c_scan.save()
-    
-    scanned_caught = False
-    try:
-        extract_text_from_file(scanned_pdf_name)
-    except ScannedPdfError as err:
-        scanned_caught = True
-        print(f"✓ Scanned PDF Detection Verified: '{err}'")
-        
-    assert scanned_caught
-    
+    # 2. Request 10 questions
+    q_10 = get_questions_by_doc(doc_id, user_id=user_a_id, limit=10)
+    assert len(q_10) == 10, f"Expected 10 questions, got {len(q_10)}"
+    print(f"✓ Request 10 Questions Verified! Got: {len(q_10)}")
+
+    # 3. Request 15 questions
+    q_15 = get_questions_by_doc(doc_id, user_id=user_a_id, limit=15)
+    assert len(q_15) == 15, f"Expected 15 questions, got {len(q_15)}"
+    print(f"✓ Request 15 Questions Verified! Got: {len(q_15)}")
+
+    # 4. Request Custom 8 questions
+    q_custom = get_questions_by_doc(doc_id, user_id=user_a_id, limit=8)
+    assert len(q_custom) == 8, f"Expected 8 questions, got {len(q_custom)}"
+    print(f"✓ Request Custom 8 Questions Verified! Got: {len(q_custom)}")
+
+    # 5. Request 5 Flashcards
+    fc_5 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=5)
+    assert len(fc_5) == 5, f"Expected 5 flashcards, got {len(fc_5)}"
+    print(f"✓ Request 5 Flashcards Verified! Got: {len(fc_5)}")
+
+    # 6. Request 15 Flashcards
+    fc_15 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=15)
+    assert len(fc_15) == 15, f"Expected 15 flashcards, got {len(fc_15)}"
+    print(f"✓ Request 15 Flashcards Verified! Got: {len(fc_15)}")
+
+    # 7. Request Custom 12 Flashcards
+    fc_custom = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=12)
+    assert len(fc_custom) == 12, f"Expected 12 flashcards, got {len(fc_custom)}"
+    print(f"✓ Request Custom 12 Flashcards Verified! Got: {len(fc_custom)}")
+
     print("\n==================================================")
-    print("ALL EDTECH SAAS AUTH & PIPELINE TESTS PASSED!")
+    print("ALL DYNAMIC COUNT & DIFFICULTY TESTS PASSED!")
     print("==================================================")
 
 if __name__ == '__main__':

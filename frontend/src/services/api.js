@@ -118,8 +118,14 @@ export async function fetchTopics(docId) {
   return handleResponse(res);
 }
 
-export async function fetchFlashcards(docId) {
-  const url = docId ? `${API_BASE}/flashcards?doc_id=${docId}` : `${API_BASE}/flashcards`;
+export async function fetchFlashcards(docId, count, difficulty) {
+  let url = `${API_BASE}/flashcards`;
+  const params = [];
+  if (docId) params.push(`doc_id=${docId}`);
+  if (count) params.push(`count=${count}`);
+  if (difficulty) params.push(`difficulty=${encodeURIComponent(difficulty)}`);
+  if (params.length > 0) url += `?${params.join('&')}`;
+
   const res = await fetch(url, { headers: getHeaders() });
   return handleResponse(res);
 }
@@ -133,9 +139,24 @@ export async function updateFlashcardStatus(cardId, status) {
   return handleResponse(res);
 }
 
-export async function fetchQuiz(docId) {
-  const url = docId ? `${API_BASE}/quiz?doc_id=${docId}` : `${API_BASE}/quiz`;
+export async function fetchQuiz(docId, count, difficulty) {
+  let url = `${API_BASE}/quiz`;
+  const params = [];
+  if (docId) params.push(`doc_id=${docId}`);
+  if (count) params.push(`count=${count}`);
+  if (difficulty) params.push(`difficulty=${encodeURIComponent(difficulty)}`);
+  if (params.length > 0) url += `?${params.join('&')}`;
+
   const res = await fetch(url, { headers: getHeaders() });
+  return handleResponse(res);
+}
+
+export async function generateMoreContent(docId) {
+  const res = await fetch(`${API_BASE}/generate-more`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ doc_id: docId })
+  });
   return handleResponse(res);
 }
 

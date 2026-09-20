@@ -1,20 +1,76 @@
-import React, { useState } from 'react';
-import { Layers, RotateCw, ChevronLeft, ChevronRight, Shuffle, RefreshCw, CheckCircle2, AlertCircle, Filter, BookOpen, Upload } from 'lucide-react';
-import { updateFlashcardStatus } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { 
+  Layers, RotateCw, ChevronLeft, ChevronRight, Shuffle, 
+  RefreshCw, CheckCircle2, AlertCircle, Filter, BookOpen, 
+  Upload, Settings, PlusCircle, Loader2 
+} from 'lucide-react';
+import { fetchFlashcards, updateFlashcardStatus, generateMoreContent } from '../services/api';
+import FlashcardSetup from './FlashcardSetup';
 
-export default function Flashcards({ flashcards, onNavigateToUpload }) {
-  const [cardsList, setCardsList] = useState(flashcards || []);
+export default function Flashcards({ docId, onNavigateToUpload }) {
+  const [setupConfig, setSetupConfig] = useState(null); // { count: 10, difficulty: 'Mixed' }
+  const [cardsList, setCardsList] = useState([]);
+  const [totalAvailable, setTotalAvailable] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [generatingMore, setGeneratingMore] = useState(false);
+  
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState('ALL');
+  const [error, setError] = useState(null);
 
-  // Sync if prop updates
-  React.useEffect(() => {
-    setCardsList(flashcards || []);
-    setCurrentIndex(0);
-    setIsFlipped(false);
-  }, [flashcards]);
+  useEffect(() => {
+    if (setupConfig && docId) {
+      loadCards(setupConfig.count, setupConfig.difficulty);
+    }
+  }, [setupConfig, docId]);
 
+  const loadCards = async (count, difficulty) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchFlashcards(docId, count, difficulty);
+      setCardsList(res.flashcards || []);
+      setTotalAvailable(res.total_available || 0);
+      setCurrentIndex(0);
+      setIsFlipped(false);
+    } catch (err) {
+      setError(err.message || 'Failed to load flashcards.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateMore = async () => {
+    setGeneratingMore(true);
+    try {
+      await generateMoreContent(docId);
+      if (setupConfig) {
+        await loadCards(setupConfig.count, setupConfig.difficulty);
+      }
+    } catch (err) {
+      alert('Failed to generate more content: ' + err.message);
+    } finally {
+      setGeneratingMore(false);
+    }
+  };
+
+  // 1. Render Setup Screen
+  if (!setupConfig) {
+    return <FlashcardSetup onStartFlashcards={(count, difficulty) => setSetupConfig({ count, difficulty })} />;
+  }
+
+  // 2. Loading State
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-3">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+        <p className="text-sm text-slate-400 font-medium">Preparing your {setupConfig.count} flashcards...</p>
+      </div>
+    );
+  }
+
+  // 3. Empty Cards State
   if (!cardsList || cardsList.length === 0) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center">
@@ -22,31 +78,40 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
           <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-2">
             <Layers className="w-8 h-8" />
           </div>
-          <h3 className="text-2xl font-display font-bold text-white">No Flashcards Yet</h3>
+          <h3 className="text-2xl font-display font-bold text-white">No Flashcards Found</h3>
           <p className="text-slate-400 text-sm max-w-md mx-auto">
-            Upload your study notes or PDF to automatically generate active-recall flashcards.
+            {error || 'No flashcards available matching your criteria.'}
           </p>
-          <button
-            onClick={onNavigateToUpload}
-            className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-600/25 inline-flex items-center gap-2 cursor-pointer mt-2"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Upload Notes & Generate Flashcards</span>
-          </button>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => setSetupConfig(null)}
+              className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Change Setup</span>
+            </button>
+
+            <button
+              onClick={onNavigateToUpload}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all inline-flex items-center gap-2 cursor-pointer"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Upload Notes</span>
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Get unique topics
   const topicsList = ['ALL', ...new Set(cardsList.map(f => f.topic_name).filter(Boolean))];
-
-  // Filter flashcards by topic
   const filteredCards = selectedTopic === 'ALL'
     ? cardsList
     : cardsList.filter(f => f.topic_name === selectedTopic);
 
   const activeCard = filteredCards[currentIndex] || filteredCards[0];
+  const requestedCount = setupConfig.count;
+  const showShortageNotice = totalAvailable < requestedCount;
 
   const handleNext = () => {
     setIsFlipped(false);
@@ -74,7 +139,6 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
     if (!activeCard) return;
     try {
       await updateFlashcardStatus(activeCard.id, status);
-      // Update local state
       setCardsList(prev => prev.map(c => c.id === activeCard.id ? { ...c, status } : c));
       handleNext();
     } catch (err) {
@@ -93,15 +157,23 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
             Study Flashcards
           </h2>
           <p className="text-slate-400 text-xs sm:text-sm mt-1">
-            Test your active recall. Flip cards to reveal answers and mark your learning progress.
+            Target Count: <strong className="text-indigo-400">{requestedCount} Cards</strong> • Difficulty: <strong className="text-slate-200">{setupConfig.difficulty}</strong>
           </p>
         </div>
 
-        {/* Action Buttons: Shuffle & Restart */}
+        {/* Action Buttons */}
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setSetupConfig(null)}
+            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-400" />
+            <span>Setup</span>
+          </button>
+
+          <button
             onClick={handleShuffle}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Shuffle className="w-3.5 h-3.5 text-indigo-400" />
             <span>Shuffle</span>
@@ -109,13 +181,31 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
 
           <button
             onClick={handleRestart}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
             <span>Restart</span>
           </button>
         </div>
       </div>
+
+      {/* Shortage Notification if totalAvailable < requestedCount */}
+      {showShortageNotice && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Only <strong>{totalAvailable}</strong> flashcard(s) are available from your notes.</span>
+          </div>
+          <button
+            onClick={handleGenerateMore}
+            disabled={generatingMore}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold border border-amber-500/30 transition-all shrink-0 cursor-pointer inline-flex items-center gap-1"
+          >
+            {generatingMore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
+            <span>Generate More</span>
+          </button>
+        </div>
+      )}
 
       {/* Topic Filter Pills & Counter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
@@ -136,12 +226,20 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
           ))}
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono text-slate-400 shrink-0">
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-300 shrink-0">
           <span>Card</span>
-          <strong className="text-white text-sm bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-            {currentIndex + 1} / {filteredCards.length}
+          <strong className="text-white text-sm bg-slate-900 px-3 py-1 rounded-lg border border-slate-800">
+            {currentIndex + 1} of {filteredCards.length}
           </strong>
         </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+        <div 
+          className="bg-indigo-500 h-1.5 rounded-full transition-all duration-300"
+          style={{ width: `${((currentIndex + 1) / filteredCards.length) * 100}%` }}
+        ></div>
       </div>
 
       {/* 3D Flip Flashcard Container */}
@@ -212,7 +310,6 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
 
       {/* Answer Toggle & Status Buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        
         <button
           onClick={() => setIsFlipped(!isFlipped)}
           className="py-3 px-4 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -236,7 +333,6 @@ export default function Flashcards({ flashcards, onNavigateToUpload }) {
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>I Know This</span>
         </button>
-
       </div>
 
       {/* Previous & Next Navigation */}

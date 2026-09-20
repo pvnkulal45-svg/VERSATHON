@@ -42,9 +42,6 @@ def get_all_documents(user_id=1):
     return [dict(d) for d in docs]
 
 def save_topics(doc_id, topics, user_id=1):
-    """
-    topics: list of dicts with rich fields
-    """
     conn = get_db()
     cursor = conn.cursor()
     saved = []
@@ -149,14 +146,44 @@ def save_flashcards(doc_id, flashcards, user_id=1):
     conn.close()
     return saved
 
-def get_flashcards_by_doc(doc_id, user_id=None):
+def get_flashcards_by_doc(doc_id, user_id=None, limit=None, difficulty=None):
     conn = get_db()
     cursor = conn.cursor()
+    
+    query = 'SELECT * FROM flashcards WHERE document_id = ?'
+    params = [doc_id]
+    
     if user_id:
-        cursor.execute('SELECT * FROM flashcards WHERE document_id = ? AND user_id = ?', (doc_id, user_id))
-    else:
-        cursor.execute('SELECT * FROM flashcards WHERE document_id = ?', (doc_id,))
+        query += ' AND user_id = ?'
+        params.append(user_id)
+        
+    if difficulty and difficulty != 'Mixed':
+        query += ' AND difficulty = ?'
+        params.append(difficulty)
+        
+    query += ' ORDER BY id ASC'
+    
+    if limit and isinstance(limit, int) and limit > 0:
+        query += ' LIMIT ?'
+        params.append(limit)
+        
+    cursor.execute(query, tuple(params))
     cards = cursor.fetchall()
+    
+    # Fallback if filtered difficulty returns 0 cards
+    if not cards and difficulty and difficulty != 'Mixed':
+        fallback_query = 'SELECT * FROM flashcards WHERE document_id = ?'
+        fallback_params = [doc_id]
+        if user_id:
+            fallback_query += ' AND user_id = ?'
+            fallback_params.append(user_id)
+        fallback_query += ' ORDER BY id ASC'
+        if limit:
+            fallback_query += ' LIMIT ?'
+            fallback_params.append(limit)
+        cursor.execute(fallback_query, tuple(fallback_params))
+        cards = cursor.fetchall()
+
     conn.close()
     return [dict(c) for c in cards]
 
@@ -209,13 +236,24 @@ def save_questions(doc_id, questions, user_id=1):
     conn.close()
     return saved
 
-def get_questions_by_doc(doc_id, user_id=None):
+def get_questions_by_doc(doc_id, user_id=None, limit=None, difficulty=None):
     conn = get_db()
     cursor = conn.cursor()
+    
+    query = 'SELECT * FROM questions WHERE document_id = ?'
+    params = [doc_id]
+    
     if user_id:
-        cursor.execute('SELECT * FROM questions WHERE document_id = ? AND user_id = ?', (doc_id, user_id))
-    else:
-        cursor.execute('SELECT * FROM questions WHERE document_id = ?', (doc_id,))
+        query += ' AND user_id = ?'
+        params.append(user_id)
+        
+    query += ' ORDER BY id ASC'
+    
+    if limit and isinstance(limit, int) and limit > 0:
+        query += ' LIMIT ?'
+        params.append(limit)
+        
+    cursor.execute(query, tuple(params))
     questions = cursor.fetchall()
     conn.close()
     return [dict(q) for q in questions]

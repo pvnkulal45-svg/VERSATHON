@@ -20,7 +20,6 @@ def get_current_user():
         user = get_user_from_token(token)
         if user:
             return user
-    # Fallback to guest user ID 1 for backwards compatibility if token not sent
     return {"id": 1, "name": "Guest Student", "email": "guest@learnnotes.com"}
 
 def allowed_file(filename):
@@ -58,7 +57,7 @@ def handle_get_me():
     user = get_current_user()
     return jsonify({"user": user}), 200
 
-# DOCUMENT & CONTENT ROUTES (ISOLATED BY USER_ID)
+# DOCUMENT & CONTENT ROUTES
 @api_bp.route('/upload', methods=['POST'])
 def upload_file():
     user = get_current_user()
@@ -151,16 +150,26 @@ def get_flashcards():
     user = get_current_user()
     user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    count = request.args.get('count', type=int)
+    difficulty = request.args.get('difficulty', type=str)
     
     if not doc_id:
         latest = get_latest_document(user_id=user_id)
         if not latest:
-            return jsonify({"flashcards": [], "document": None}), 200
+            return jsonify({"flashcards": [], "document": None, "total_available": 0}), 200
         doc_id = latest['id']
         
     doc = get_document(doc_id, user_id=user_id)
-    flashcards = get_flashcards_by_doc(doc_id, user_id=user_id)
-    return jsonify({"document": doc, "flashcards": flashcards}), 200
+    all_cards = get_flashcards_by_doc(doc_id, user_id=user_id)
+    total_available = len(all_cards)
+    
+    requested_cards = get_flashcards_by_doc(doc_id, user_id=user_id, limit=count, difficulty=difficulty)
+    return jsonify({
+        "document": doc,
+        "flashcards": requested_cards,
+        "total_available": total_available,
+        "requested_count": count or total_available
+    }), 200
 
 @api_bp.route('/flashcards/<int:card_id>/status', methods=['POST'])
 def handle_flashcard_status(card_id):
@@ -180,16 +189,64 @@ def get_quiz():
     user = get_current_user()
     user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    count = request.args.get('count', type=int)
+    difficulty = request.args.get('difficulty', type=str)
     
     if not doc_id:
         latest = get_latest_document(user_id=user_id)
         if not latest:
-            return jsonify({"questions": [], "document": None}), 200
+            return jsonify({"questions": [], "document": None, "total_available": 0}), 200
         doc_id = latest['id']
         
     doc = get_document(doc_id, user_id=user_id)
-    questions = get_questions_by_doc(doc_id, user_id=user_id)
-    return jsonify({"document": doc, "questions": questions}), 200
+    all_questions = get_questions_by_doc(doc_id, user_id=user_id)
+    total_available = len(all_questions)
+    
+    requested_questions = get_questions_by_doc(doc_id, user_id=user_id, limit=count, difficulty=difficulty)
+    return jsonify({
+        "document": doc,
+        "questions": requested_questions,
+        "total_available": total_available,
+        "requested_count": count or total_available
+    }), 200
+
+@api_bp.route('/generate-more', methods=['POST'])
+def generate_more_content():
+    user = get_current_user()
+    user_id = user['id']
+    data = request.json or {}
+    doc_id = data.get('doc_id')
+    
+    if not doc_id:
+        latest = get_latest_document(user_id=user_id)
+        if not latest:
+            return jsonify({"error": "No active document found."}), 400
+        doc_id = latest['id']
+        
+    doc = get_document(doc_id, user_id=user_id)
+    if not doc:
+        return jsonify({"error": "Document not found."}), 404
+        
+    filepath = os.path.join(config.UPLOAD_FOLDER, doc['filename'])
+    if not os.path.exists(filepath):
+        return jsonify({"error": "Original note file missing."}), 404
+        
+    try:
+        extracted_text, page_count = extract_text_from_file(filepath)
+        chunks = chunk_text(extracted_text, max_chunk_size=3500)
+        topics, flashcards, questions = process_text_chunks(chunks)
+        
+        saved_topics = save_topics(doc_id, topics, user_id=user_id)
+        saved_flashcards = save_flashcards(doc_id, flashcards, user_id=user_id)
+        saved_questions = save_questions(doc_id, questions, user_id=user_id)
+        
+        return jsonify({
+            "message": "More content generated successfully!",
+            "flashcards_count": len(saved_flashcards),
+            "questions_count": len(saved_questions)
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate more content: {str(e)}"}), 500
 
 @api_bp.route('/quiz/submit', methods=['POST'])
 def submit_quiz():
@@ -208,9 +265,9 @@ def submit_quiz():
     all_questions = get_questions_by_doc(doc_id, user_id=user_id)
     q_map = {q['id']: q for q in all_questions}
     
-    total_questions = len(all_questions)
+    total_questions = len(user_answers) if user_answers else len(all_questions)
     if total_questions == 0:
-        return jsonify({"error": "No questions found for this document."}), 400
+        return jsonify({"error": "No questions answered."}), 400
         
     correct_count = 0
     evaluated_answers = []
@@ -236,10 +293,7 @@ def submit_quiz():
     incorrect_count = total_questions - correct_count
     score_percentage = round((correct_count / total_questions) * 100.0, 1)
     
-    # Save attempt under user_id
     attempt_id = save_quiz_attempt(doc_id, total_questions, correct_count, incorrect_count, score_percentage, evaluated_answers, user_id=user_id)
-    
-    # Weak topics (<60% accuracy rule)
     topic_perf = get_topic_performance(doc_id, user_id=user_id)
     weak_topics = [t for t in topic_perf if t['is_weak']]
     

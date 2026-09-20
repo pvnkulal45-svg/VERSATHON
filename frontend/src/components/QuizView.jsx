@@ -1,27 +1,78 @@
-import React, { useState } from 'react';
-import { HelpCircle, CheckCircle2, ChevronLeft, ChevronRight, Send, AlertCircle, Loader2, BookOpen } from 'lucide-react';
-import { submitQuiz } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { HelpCircle, CheckCircle2, ChevronLeft, ChevronRight, Send, AlertCircle, Loader2, BookOpen, Settings } from 'lucide-react';
+import { fetchQuiz, submitQuiz } from '../services/api';
+import QuizSetup from './QuizSetup';
 
-export default function QuizView({ questions, docId, onQuizSubmitted }) {
-  const [answers, setAnswers] = useState({}); // { [question_id]: 'A' | 'B' | 'C' | 'D' }
+export default function QuizView({ docId, onQuizSubmitted }) {
+  const [setupConfig, setSetupConfig] = useState(null); // { count: 10, difficulty: 'Mixed' }
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [answers, setAnswers] = useState({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    if (setupConfig && docId) {
+      loadQuizQuestions(setupConfig.count, setupConfig.difficulty);
+    }
+  }, [setupConfig, docId]);
+
+  const loadQuizQuestions = async (count, difficulty) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchQuiz(docId, count, difficulty);
+      setQuestions(res.questions || []);
+      setAnswers({});
+      setCurrentIndex(0);
+    } catch (err) {
+      setError(err.message || 'Failed to load quiz questions.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 1. Render Setup Screen if setupConfig is null
+  if (!setupConfig) {
+    return <QuizSetup onStartQuiz={(count, difficulty) => setSetupConfig({ count, difficulty })} />;
+  }
+
+  // 2. Loading State
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-3">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+        <p className="text-sm text-slate-400 font-medium">Preparing your {setupConfig.count} quiz questions...</p>
+      </div>
+    );
+  }
+
+  // 3. Empty Questions State
   if (!questions || questions.length === 0) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4">
-          <HelpCircle className="w-8 h-8" />
+      <div className="max-w-xl mx-auto px-4 py-16 text-center">
+        <div className="glass-card rounded-3xl p-8 border border-slate-800 space-y-4">
+          <HelpCircle className="w-10 h-10 text-slate-600 mx-auto" />
+          <h3 className="text-xl font-bold text-white">No Quiz Questions Available</h3>
+          <p className="text-slate-400 text-sm">
+            {error || 'No questions found matching your notes and criteria.'}
+          </p>
+          <button
+            onClick={() => setSetupConfig(null)}
+            className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-xs transition-all cursor-pointer inline-flex items-center gap-2"
+          >
+            <Settings className="w-4 h-4" />
+            <span>Change Quiz Setup</span>
+          </button>
         </div>
-        <h3 className="text-xl font-bold text-white mb-1">No Quiz Questions Found</h3>
-        <p className="text-slate-400 text-sm">Please upload a document to generate practice quiz questions.</p>
       </div>
     );
   }
 
   const currentQ = questions[currentIndex];
   const totalQ = questions.length;
+  const targetCount = setupConfig.count;
   const answeredCount = Object.keys(answers).length;
 
   const handleSelectOption = (optionLetter) => {
@@ -82,38 +133,46 @@ export default function QuizView({ questions, docId, onQuizSubmitted }) {
             Practice Quiz
           </h2>
           <p className="text-slate-400 text-xs sm:text-sm mt-1">
-            Questions generated strictly based on your uploaded notes.
+            Target Count: <strong className="text-emerald-400">{targetCount} Questions</strong> • Difficulty: <strong className="text-slate-200">{setupConfig.difficulty}</strong>
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSetupConfig(null)}
+            className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Setup</span>
+          </button>
+
           <div className="text-right">
-            <span className="text-xs text-slate-400 block">Answered Progress</span>
+            <span className="text-xs text-slate-400 block">Progress</span>
             <span className="text-sm font-bold text-emerald-400">
-              {answeredCount} / {totalQ} Questions
+              {answeredCount} / {totalQ} Answered
             </span>
           </div>
         </div>
       </div>
 
-      {/* Progress Bar */}
+      {/* Progress Bar (Denominated by selected totalQ) */}
       <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
         <div 
           className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
-          style={{ width: `${(answeredCount / totalQ) * 100}%` }}
+          style={{ width: `${((currentIndex + 1) / totalQ) * 100}%` }}
         ></div>
       </div>
 
       {/* Question Card */}
       <div className="glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
         
-        {/* Question Topic & Header */}
+        {/* Question Topic & Dynamic Counter */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1.5">
             <BookOpen className="w-3.5 h-3.5" />
             {currentQ.topic_name || 'General'}
           </span>
-          <span className="text-xs font-mono text-slate-400">
+          <span className="text-xs font-mono text-slate-300 bg-slate-900 px-3 py-1 rounded-lg border border-slate-800 font-bold">
             Question {currentIndex + 1} of {totalQ}
           </span>
         </div>
