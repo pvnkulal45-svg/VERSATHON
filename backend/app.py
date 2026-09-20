@@ -1,4 +1,14 @@
 import os
+import sys
+import glob
+
+# Auto-add venv site-packages to sys.path if not running inside venv
+base_dir = os.path.dirname(os.path.abspath(__file__))
+venv_sites = glob.glob(os.path.join(base_dir, 'venv', 'lib', 'python*', 'site-packages'))
+for site_path in venv_sites:
+    if site_path not in sys.path:
+        sys.path.insert(0, site_path)
+
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv

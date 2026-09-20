@@ -1,11 +1,21 @@
 import sys
 import os
+import glob
+
+# Auto-add backend directory and venv site-packages to sys.path
+base_dir = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.join(base_dir, 'backend')
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+venv_sites = glob.glob(os.path.join(backend_dir, 'venv', 'lib', 'python*', 'site-packages'))
+for site_path in venv_sites:
+    if site_path not in sys.path:
+        sys.path.insert(0, site_path)
+
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
-
-# Add backend directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
 from services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
 from services.ai_service import process_text_chunks
