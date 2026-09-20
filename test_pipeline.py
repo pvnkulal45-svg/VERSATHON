@@ -17,13 +17,22 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-from services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
-from services.ai_service import process_text_chunks
-from models import (
-    create_document, save_topics, save_flashcards, save_questions,
-    save_quiz_attempt, get_topic_performance
-)
-from database import init_db
+try:
+    from backend.services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
+    from backend.services.ai_service import process_text_chunks
+    from backend.models import (
+        create_document, save_topics, save_flashcards, save_questions,
+        save_quiz_attempt, get_topic_performance
+    )
+    from backend.database import init_db
+except (ModuleNotFoundError, ImportError):
+    from services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
+    from services.ai_service import process_text_chunks
+    from models import (
+        create_document, save_topics, save_flashcards, save_questions,
+        save_quiz_attempt, get_topic_performance
+    )
+    from database import init_db
 
 def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
     c = canvas.Canvas(filename, pagesize=letter)
