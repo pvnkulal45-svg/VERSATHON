@@ -1,0 +1,30 @@
+# Environment & Secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Dependencies
+node_modules/
+backend/venv/
+venv/
+ENV/
+
+# Python Cache & Build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Databases & Uploaded Files
+backend/app.db
+*.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+test_*.pdf
+
+# Frontend Build
+frontend/dist/
+frontend/node_modules/
+.DS_Store
