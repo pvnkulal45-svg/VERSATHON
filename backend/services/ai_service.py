@@ -26,7 +26,7 @@ def get_gemini_client():
 def heuristic_extract_topics_and_content(text: str):
     """
     NLP Heuristic Extractor: Works offline with 0 API dependencies.
-    Extracts topics, flashcards, and MCQs directly from document text.
+    Extracts rich topics, flashcards, and MCQs directly from document text.
     """
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 20]
@@ -62,25 +62,54 @@ def heuristic_extract_topics_and_content(text: str):
                 if 3 < len(clean_m) < 40 and clean_m not in potential_headings:
                     potential_headings.append(clean_m)
                     
-    default_topics = ["Core Concepts", "Key Definitions", "System Features", "Architecture & Process", "Advanced Mechanics"]
+    default_topics = ["Data Transformation", "System Architecture", "Process Scheduling", "Resource Management", "Security Control"]
     for dt in default_topics:
         if len(potential_headings) < 4 and dt not in potential_headings:
             potential_headings.append(dt)
             
+    importance_levels = ["High", "High", "Medium", "High", "Medium", "Low"]
     topics_list = []
-    for th in potential_headings[:8]:
-        desc = f"Key concepts and definitions related to {th} based on study notes."
+
+    for i, th in enumerate(potential_headings[:8]):
+        detailed_desc = f"Comprehensive review of {th} within the scope of the study material."
+        simple_desc = f"Think of {th} as a fundamental mechanism that keeps system operations running smoothly."
+        example_desc = f"For example, applying {th} ensures consistent processing without resource conflicts."
+        
+        # Find matching paragraph for text snippets
+        matching_p = None
         for p in paragraphs:
             if th.lower() in p.lower():
-                sents = p.split('.')
-                for s in sents:
-                    if len(s.strip()) > 20:
-                        desc = s.strip() + '.'
-                        break
+                matching_p = p
                 break
+                
+        if matching_p:
+            detailed_desc = matching_p[:300] + ("..." if len(matching_p) > 300 else "")
+            simple_desc = f"{th} manages key workflows as described in the notes: {matching_p[:120]}..."
+            example_desc = f"A practical illustration of {th} is observed in: {matching_p[:100]}."
+
+        summary_text = f"Core concepts and operational principles of {th} based on notes."
+        imp = importance_levels[i % len(importance_levels)]
+
+        key_pts = [
+            f"Primary function of {th} in system execution.",
+            f"Key parameters and configuration parameters.",
+            f"Operational trade-offs and performance impact."
+        ]
+        
+        exam_tip_text = f"Remember the key term '{th}' and its relationship to core system stability during exams."
+        memory_tip_text = f"Use the mnemonic '{th[:3].upper()}' to recall the 3 primary rules of this topic."
+
         topics_list.append({
             "title": th,
-            "description": desc[:150]
+            "summary": summary_text,
+            "importance": imp,
+            "description": detailed_desc,
+            "simple_explanation": simple_desc,
+            "detailed_explanation": detailed_desc,
+            "example": example_desc,
+            "key_points": key_pts,
+            "exam_tip": exam_tip_text,
+            "memory_tip": memory_tip_text
         })
 
     # 2. Flashcard Generation
@@ -114,10 +143,12 @@ def heuristic_extract_topics_and_content(text: str):
             flashcards_list.append({
                 "question": q_text,
                 "answer": ans_text,
-                "topic_name": assigned_topic
+                "topic_name": assigned_topic,
+                "difficulty": random.choice(["Easy", "Medium", "Hard"]),
+                "status": "new"
             })
 
-    # Fallback to sentence parsing if flashcards < 6
+    # Fallback sentence parsing if flashcards < 6
     if len(flashcards_list) < 6:
         for i, p in enumerate(paragraphs):
             sentences = [s.strip() for s in p.split('.') if len(s.strip()) > 25]
@@ -132,7 +163,9 @@ def heuristic_extract_topics_and_content(text: str):
                         flashcards_list.append({
                             "question": q_text,
                             "answer": s + ".",
-                            "topic_name": assigned_topic
+                            "topic_name": assigned_topic,
+                            "difficulty": random.choice(["Easy", "Medium", "Hard"]),
+                            "status": "new"
                         })
 
     # 3. Quiz Questions (MCQs) Generation
@@ -206,7 +239,7 @@ def heuristic_extract_topics_and_content(text: str):
             q_text = f"What is the primary focus of '{top['title']}'?"
             if q_text not in seen_mcqs:
                 seen_mcqs.add(q_text)
-                correct_ans = top.get('description', f"Core concepts and definitions related to {top['title']}.")
+                correct_ans = top.get('summary', f"Core concepts and definitions related to {top['title']}.")
                 distractors = [
                     f"Manages external hardware protocols.",
                     f"Allocates static file storage in non-volatile memory.",
@@ -230,9 +263,9 @@ def heuristic_extract_topics_and_content(text: str):
 
 def generate_with_gemini(client, text_chunk: str):
     """
-    Calls Gemini API with structured output schema.
+    Calls Gemini API with structured output schema including rich topic explanation fields.
     """
-    prompt = f"""You are an expert AI tutor. Analyze the following study notes and generate structured active-learning materials.
+    prompt = f"""You are an expert AI tutor. Analyze the following study notes and generate structured active-learning materials with rich explanations.
 
 STUDY NOTES CONTENT:
 {text_chunk}
@@ -242,15 +275,24 @@ Return ONLY a valid JSON object matching this schema exactly:
 {{
   "topics": [
     {{
-      "title": "Topic Title",
-      "description": "Short 1-2 sentence description of this topic based on the text."
+      "title": "Clear Topic Title",
+      "summary": "1 sentence short summary suitable for a card.",
+      "importance": "High",
+      "description": "Concise overview.",
+      "simple_explanation": "Beginner-friendly explanation using plain language.",
+      "detailed_explanation": "Clear and detailed technical explanation strictly based on notes.",
+      "example": "Easy practical example illustrating the topic.",
+      "key_points": ["Point 1", "Point 2", "Point 3"],
+      "exam_tip": "Key points or keywords students must remember for exams.",
+      "memory_tip": "Short trick or mnemonic to remember this topic."
     }}
   ],
   "flashcards": [
     {{
-      "question": "Clear question about a concept/definition in the text?",
+      "question": "Clear question about a concept or definition?",
       "answer": "Concise factual answer based strictly on the text.",
-      "topic_name": "Matching topic title from the topics list above"
+      "topic_name": "Matching topic title from above",
+      "difficulty": "Medium"
     }}
   ],
   "questions": [
@@ -266,7 +308,7 @@ Return ONLY a valid JSON object matching this schema exactly:
     }}
   ]
 }}
-Do NOT invent information outside the study notes. Ensure correct_option is one of "A", "B", "C", or "D".
+Do NOT invent information outside the study notes. Set importance to 'High', 'Medium', or 'Low'. Ensure correct_option is 'A', 'B', 'C', or 'D'.
 """
 
     response = client.models.generate_content(
@@ -290,7 +332,7 @@ Do NOT invent information outside the study notes. Ensure correct_option is one 
 
 def process_text_chunks(chunks: list):
     """
-    Processes all text chunks (whether 1 or 20+), combines and deduplicates results.
+    Processes all text chunks, combines and deduplicates results.
     """
     client = get_gemini_client()
     
@@ -320,7 +362,15 @@ def process_text_chunks(chunks: list):
         if title and title.lower() not in unique_topics:
             unique_topics[title.lower()] = {
                 "title": title,
-                "description": t.get("description", "")
+                "summary": t.get("summary", t.get("description", "")),
+                "importance": t.get("importance", "Medium"),
+                "description": t.get("description", ""),
+                "simple_explanation": t.get("simple_explanation", ""),
+                "detailed_explanation": t.get("detailed_explanation", t.get("description", "")),
+                "example": t.get("example", ""),
+                "key_points": t.get("key_points", []),
+                "exam_tip": t.get("exam_tip", ""),
+                "memory_tip": t.get("memory_tip", "")
             }
     final_topics = list(unique_topics.values())
     
@@ -332,7 +382,9 @@ def process_text_chunks(chunks: list):
             unique_flashcards[q.lower()] = {
                 "question": q,
                 "answer": fc.get("answer", "").strip(),
-                "topic_name": fc.get("topic_name", final_topics[0]["title"] if final_topics else "General")
+                "topic_name": fc.get("topic_name", final_topics[0]["title"] if final_topics else "General"),
+                "difficulty": fc.get("difficulty", "Medium"),
+                "status": fc.get("status", "new")
             }
     final_flashcards = list(unique_flashcards.values())
     

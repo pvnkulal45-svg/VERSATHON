@@ -1,121 +1,187 @@
+import json
 from database import get_db
 
-def create_document(filename, original_name, page_count, char_count):
+def create_document(filename, original_name, page_count, char_count, user_id=1):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        '''INSERT INTO documents (filename, original_name, page_count, char_count)
-           VALUES (?, ?, ?, ?)''',
-        (filename, original_name, page_count, char_count)
+        '''INSERT INTO documents (user_id, filename, original_name, page_count, char_count)
+           VALUES (?, ?, ?, ?, ?)''',
+        (user_id, filename, original_name, page_count, char_count)
     )
     doc_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return doc_id
 
-def get_document(doc_id):
+def get_document(doc_id, user_id=None):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM documents WHERE id = ?', (doc_id,))
+    if user_id:
+        cursor.execute('SELECT * FROM documents WHERE id = ? AND user_id = ?', (doc_id, user_id))
+    else:
+        cursor.execute('SELECT * FROM documents WHERE id = ?', (doc_id,))
     doc = cursor.fetchone()
     conn.close()
     return dict(doc) if doc else None
 
-def get_latest_document():
+def get_latest_document(user_id=1):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM documents ORDER BY id DESC LIMIT 1')
+    cursor.execute('SELECT * FROM documents WHERE user_id = ? ORDER BY id DESC LIMIT 1', (user_id,))
     doc = cursor.fetchone()
     conn.close()
     return dict(doc) if doc else None
 
-def get_all_documents():
+def get_all_documents(user_id=1):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM documents ORDER BY created_at DESC')
+    cursor.execute('SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
     docs = cursor.fetchall()
     conn.close()
     return [dict(d) for d in docs]
 
-def save_topics(doc_id, topics):
+def save_topics(doc_id, topics, user_id=1):
     """
-    topics: list of dicts {'title': '...', 'description': '...'}
+    topics: list of dicts with rich fields
     """
     conn = get_db()
     cursor = conn.cursor()
     saved = []
     for top in topics:
+        key_points = top.get('key_points', [])
+        if isinstance(key_points, list):
+            key_points_str = json.dumps(key_points)
+        else:
+            key_points_str = str(key_points or '')
+
         cursor.execute(
-            '''INSERT INTO topics (document_id, title, description)
-               VALUES (?, ?, ?)''',
-            (doc_id, top.get('title'), top.get('description', ''))
+            '''INSERT INTO topics (
+                document_id, user_id, title, summary, importance, description,
+                simple_explanation, detailed_explanation, example, key_points, exam_tip, memory_tip
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (
+                doc_id,
+                user_id,
+                top.get('title'),
+                top.get('summary', top.get('description', '')),
+                top.get('importance', 'Medium'),
+                top.get('description', ''),
+                top.get('simple_explanation', ''),
+                top.get('detailed_explanation', top.get('description', '')),
+                top.get('example', ''),
+                key_points_str,
+                top.get('exam_tip', ''),
+                top.get('memory_tip', '')
+            )
         )
         saved.append({
             'id': cursor.lastrowid,
             'document_id': doc_id,
+            'user_id': user_id,
             'title': top.get('title'),
-            'description': top.get('description', '')
+            'summary': top.get('summary', top.get('description', '')),
+            'importance': top.get('importance', 'Medium'),
+            'description': top.get('description', ''),
+            'simple_explanation': top.get('simple_explanation', ''),
+            'detailed_explanation': top.get('detailed_explanation', top.get('description', '')),
+            'example': top.get('example', ''),
+            'key_points': key_points if isinstance(key_points, list) else [],
+            'exam_tip': top.get('exam_tip', ''),
+            'memory_tip': top.get('memory_tip', '')
         })
     conn.commit()
     conn.close()
     return saved
 
-def get_topics_by_doc(doc_id):
+def get_topics_by_doc(doc_id, user_id=None):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM topics WHERE document_id = ?', (doc_id,))
+    if user_id:
+        cursor.execute('SELECT * FROM topics WHERE document_id = ? AND user_id = ?', (doc_id, user_id))
+    else:
+        cursor.execute('SELECT * FROM topics WHERE document_id = ?', (doc_id,))
     topics = cursor.fetchall()
     conn.close()
-    return [dict(t) for t in topics]
+    
+    result = []
+    for t in topics:
+        td = dict(t)
+        if td.get('key_points'):
+            try:
+                td['key_points'] = json.loads(td['key_points'])
+            except Exception:
+                td['key_points'] = [td['key_points']]
+        else:
+            td['key_points'] = []
+        result.append(td)
+    return result
 
-def save_flashcards(doc_id, flashcards):
-    """
-    flashcards: list of dicts {'question': '...', 'answer': '...', 'topic_name': '...'}
-    """
+def save_flashcards(doc_id, flashcards, user_id=1):
     conn = get_db()
     cursor = conn.cursor()
     saved = []
     for fc in flashcards:
         cursor.execute(
-            '''INSERT INTO flashcards (document_id, question, answer, topic_name)
-               VALUES (?, ?, ?, ?)''',
-            (doc_id, fc.get('question'), fc.get('answer'), fc.get('topic_name', 'General'))
+            '''INSERT INTO flashcards (document_id, user_id, question, answer, topic_name, difficulty, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (
+                doc_id,
+                user_id,
+                fc.get('question'),
+                fc.get('answer'),
+                fc.get('topic_name', 'General'),
+                fc.get('difficulty', 'Medium'),
+                fc.get('status', 'new')
+            )
         )
         saved.append({
             'id': cursor.lastrowid,
             'document_id': doc_id,
+            'user_id': user_id,
             'question': fc.get('question'),
             'answer': fc.get('answer'),
-            'topic_name': fc.get('topic_name', 'General')
+            'topic_name': fc.get('topic_name', 'General'),
+            'difficulty': fc.get('difficulty', 'Medium'),
+            'status': fc.get('status', 'new')
         })
     conn.commit()
     conn.close()
     return saved
 
-def get_flashcards_by_doc(doc_id):
+def get_flashcards_by_doc(doc_id, user_id=None):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM flashcards WHERE document_id = ?', (doc_id,))
+    if user_id:
+        cursor.execute('SELECT * FROM flashcards WHERE document_id = ? AND user_id = ?', (doc_id, user_id))
+    else:
+        cursor.execute('SELECT * FROM flashcards WHERE document_id = ?', (doc_id,))
     cards = cursor.fetchall()
     conn.close()
     return [dict(c) for c in cards]
 
-def save_questions(doc_id, questions):
-    """
-    questions: list of dicts {
-        'question': '...', 'option_a': '...', 'option_b': '...', 'option_c': '...', 'option_d': '...',
-        'correct_option': 'A', 'explanation': '...', 'topic_name': '...'
-    }
-    """
+def update_flashcard_status(card_id, status, user_id=None):
+    conn = get_db()
+    cursor = conn.cursor()
+    if user_id:
+        cursor.execute('UPDATE flashcards SET status = ? WHERE id = ? AND user_id = ?', (status, card_id, user_id))
+    else:
+        cursor.execute('UPDATE flashcards SET status = ? WHERE id = ?', (status, card_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def save_questions(doc_id, questions, user_id=1):
     conn = get_db()
     cursor = conn.cursor()
     saved = []
     for q in questions:
         cursor.execute(
-            '''INSERT INTO questions (document_id, question, option_a, option_b, option_c, option_d, correct_option, explanation, topic_name)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            '''INSERT INTO questions (document_id, user_id, question, option_a, option_b, option_c, option_d, correct_option, explanation, topic_name)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (
                 doc_id,
+                user_id,
                 q.get('question'),
                 q.get('option_a'),
                 q.get('option_b'),
@@ -129,6 +195,7 @@ def save_questions(doc_id, questions):
         saved.append({
             'id': cursor.lastrowid,
             'document_id': doc_id,
+            'user_id': user_id,
             'question': q.get('question'),
             'option_a': q.get('option_a'),
             'option_b': q.get('option_b'),
@@ -142,24 +209,24 @@ def save_questions(doc_id, questions):
     conn.close()
     return saved
 
-def get_questions_by_doc(doc_id):
+def get_questions_by_doc(doc_id, user_id=None):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM questions WHERE document_id = ?', (doc_id,))
+    if user_id:
+        cursor.execute('SELECT * FROM questions WHERE document_id = ? AND user_id = ?', (doc_id, user_id))
+    else:
+        cursor.execute('SELECT * FROM questions WHERE document_id = ?', (doc_id,))
     questions = cursor.fetchall()
     conn.close()
     return [dict(q) for q in questions]
 
-def save_quiz_attempt(doc_id, total_questions, correct_answers, incorrect_answers, score_percentage, answers_data):
-    """
-    answers_data: list of dicts {'question_id': 1, 'topic_name': '...', 'selected_option': 'B', 'is_correct': True}
-    """
+def save_quiz_attempt(doc_id, total_questions, correct_answers, incorrect_answers, score_percentage, answers_data, user_id=1):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        '''INSERT INTO quiz_attempts (document_id, total_questions, correct_answers, incorrect_answers, score_percentage)
-           VALUES (?, ?, ?, ?, ?)''',
-        (doc_id, total_questions, correct_answers, incorrect_answers, score_percentage)
+        '''INSERT INTO quiz_attempts (document_id, user_id, total_questions, correct_answers, incorrect_answers, score_percentage)
+           VALUES (?, ?, ?, ?, ?, ?)''',
+        (doc_id, user_id, total_questions, correct_answers, incorrect_answers, score_percentage)
     )
     attempt_id = cursor.lastrowid
     
@@ -180,13 +247,19 @@ def save_quiz_attempt(doc_id, total_questions, correct_answers, incorrect_answer
     conn.close()
     return attempt_id
 
-def get_latest_quiz_attempt(doc_id):
+def get_latest_quiz_attempt(doc_id, user_id=None):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        'SELECT * FROM quiz_attempts WHERE document_id = ? ORDER BY created_at DESC LIMIT 1',
-        (doc_id,)
-    )
+    if user_id:
+        cursor.execute(
+            'SELECT * FROM quiz_attempts WHERE document_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1',
+            (doc_id, user_id)
+        )
+    else:
+        cursor.execute(
+            'SELECT * FROM quiz_attempts WHERE document_id = ? ORDER BY created_at DESC LIMIT 1',
+            (doc_id,)
+        )
     attempt = cursor.fetchone()
     if not attempt:
         conn.close()
@@ -202,13 +275,8 @@ def get_latest_quiz_attempt(doc_id):
     attempt_dict['answers'] = [dict(a) for a in answers]
     return attempt_dict
 
-def get_topic_performance(doc_id):
-    """
-    Calculates accuracy per topic across the latest quiz attempt.
-    Returns: list of dicts [{'topic_name': '...', 'total': 5, 'correct': 2, 'accuracy': 40.0, 'is_weak': True}]
-    Rule: accuracy < 60.0 => weak topic
-    """
-    latest = get_latest_quiz_attempt(doc_id)
+def get_topic_performance(doc_id, user_id=None):
+    latest = get_latest_quiz_attempt(doc_id, user_id)
     if not latest or not latest.get('answers'):
         return []
     

@@ -7,51 +7,100 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def add_column_if_not_exists(cursor, table, column_def):
+    col_name = column_def.split()[0]
+    cursor.execute(f"PRAGMA table_info({table})")
+    cols = [row[1] for row in cursor.fetchall()]
+    if col_name not in cols:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Documents table
+    # 1. Users table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS documents (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            original_name TEXT NOT NULL,
-            page_count INTEGER DEFAULT 1,
-            char_count INTEGER DEFAULT 0,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            token TEXT UNIQUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    # Topics table
+    # 2. Documents table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER DEFAULT 1,
+            filename TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            page_count INTEGER DEFAULT 1,
+            char_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    ''')
+    add_column_if_not_exists(cursor, 'documents', 'user_id INTEGER DEFAULT 1')
+    
+    # 3. Topics table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS topics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             document_id INTEGER NOT NULL,
+            user_id INTEGER DEFAULT 1,
             title TEXT NOT NULL,
+            summary TEXT,
+            importance TEXT DEFAULT 'Medium',
             description TEXT,
-            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            simple_explanation TEXT,
+            detailed_explanation TEXT,
+            example TEXT,
+            key_points TEXT,
+            exam_tip TEXT,
+            memory_tip TEXT,
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     ''')
+    add_column_if_not_exists(cursor, 'topics', 'user_id INTEGER DEFAULT 1')
+    add_column_if_not_exists(cursor, 'topics', 'summary TEXT')
+    add_column_if_not_exists(cursor, 'topics', "importance TEXT DEFAULT 'Medium'")
+    add_column_if_not_exists(cursor, 'topics', 'simple_explanation TEXT')
+    add_column_if_not_exists(cursor, 'topics', 'detailed_explanation TEXT')
+    add_column_if_not_exists(cursor, 'topics', 'example TEXT')
+    add_column_if_not_exists(cursor, 'topics', 'key_points TEXT')
+    add_column_if_not_exists(cursor, 'topics', 'exam_tip TEXT')
+    add_column_if_not_exists(cursor, 'topics', 'memory_tip TEXT')
     
-    # Flashcards table
+    # 4. Flashcards table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS flashcards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             document_id INTEGER NOT NULL,
+            user_id INTEGER DEFAULT 1,
             topic_id INTEGER,
             question TEXT NOT NULL,
             answer TEXT NOT NULL,
             topic_name TEXT,
-            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            difficulty TEXT DEFAULT 'Medium',
+            status TEXT DEFAULT 'new',
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     ''')
+    add_column_if_not_exists(cursor, 'flashcards', 'user_id INTEGER DEFAULT 1')
+    add_column_if_not_exists(cursor, 'flashcards', "difficulty TEXT DEFAULT 'Medium'")
+    add_column_if_not_exists(cursor, 'flashcards', "status TEXT DEFAULT 'new'")
     
-    # Questions table
+    # 5. Questions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             document_id INTEGER NOT NULL,
+            user_id INTEGER DEFAULT 1,
             topic_id INTEGER,
             question TEXT NOT NULL,
             option_a TEXT NOT NULL,
@@ -61,25 +110,30 @@ def init_db():
             correct_option TEXT NOT NULL,
             explanation TEXT,
             topic_name TEXT,
-            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     ''')
+    add_column_if_not_exists(cursor, 'questions', 'user_id INTEGER DEFAULT 1')
     
-    # Quiz attempts table
+    # 6. Quiz attempts table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS quiz_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             document_id INTEGER NOT NULL,
+            user_id INTEGER DEFAULT 1,
             total_questions INTEGER NOT NULL,
             correct_answers INTEGER NOT NULL,
             incorrect_answers INTEGER NOT NULL,
             score_percentage REAL NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     ''')
+    add_column_if_not_exists(cursor, 'quiz_attempts', 'user_id INTEGER DEFAULT 1')
     
-    # Quiz answers table
+    # 7. Quiz answers table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS quiz_answers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,4 +152,4 @@ def init_db():
 
 if __name__ == '__main__':
     init_db()
-    print("Database initialized successfully.")
+    print("Database initialized successfully with users and rich topic schemas.")

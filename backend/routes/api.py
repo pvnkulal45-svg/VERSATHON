@@ -1,17 +1,27 @@
 import os
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 import config
 from models import (
     create_document, get_document, get_latest_document, get_all_documents,
     save_topics, get_topics_by_doc, save_flashcards, get_flashcards_by_doc,
-    save_questions, get_questions_by_doc, save_quiz_attempt, get_latest_quiz_attempt,
-    get_topic_performance
+    update_flashcard_status, save_questions, get_questions_by_doc,
+    save_quiz_attempt, get_latest_quiz_attempt, get_topic_performance
 )
 from services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError, UnsupportedFileError
 from services.ai_service import process_text_chunks
+from services.auth_service import register_user, login_user, get_user_from_token, AuthError
 
 api_bp = Blueprint('api', __name__)
+
+def get_current_user():
+    token = request.headers.get('Authorization')
+    if token:
+        user = get_user_from_token(token)
+        if user:
+            return user
+    # Fallback to guest user ID 1 for backwards compatibility if token not sent
+    return {"id": 1, "name": "Guest Student", "email": "guest@learnnotes.com"}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
@@ -20,8 +30,40 @@ def allowed_file(filename):
 def health_check():
     return jsonify({"status": "ok", "message": "Learn From Your Notes API is running"}), 200
 
+# AUTH ROUTES
+@api_bp.route('/auth/register', methods=['POST'])
+def handle_register():
+    data = request.json or {}
+    try:
+        res = register_user(data.get('name'), data.get('email'), data.get('password'))
+        return jsonify(res), 201
+    except AuthError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
+
+@api_bp.route('/auth/login', methods=['POST'])
+def handle_login():
+    data = request.json or {}
+    try:
+        res = login_user(data.get('email'), data.get('password'))
+        return jsonify(res), 200
+    except AuthError as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        return jsonify({"error": f"Login failed: {str(e)}"}), 500
+
+@api_bp.route('/auth/me', methods=['GET'])
+def handle_get_me():
+    user = get_current_user()
+    return jsonify({"user": user}), 200
+
+# DOCUMENT & CONTENT ROUTES (ISOLATED BY USER_ID)
 @api_bp.route('/upload', methods=['POST'])
 def upload_file():
+    user = get_current_user()
+    user_id = user['id']
+
     if 'file' not in request.files:
         return jsonify({"error": "No file part provided in request."}), 400
         
@@ -33,7 +75,7 @@ def upload_file():
         return jsonify({"error": "Invalid file type. Only PDF (.pdf) and TXT (.txt) files are allowed."}), 400
         
     original_name = secure_filename(file.filename) or "study_notes.pdf"
-    save_filename = f"{os.urandom(8).hex()}_{original_name}"
+    save_filename = f"{user_id}_{os.urandom(8).hex()}_{original_name}"
     filepath = os.path.join(config.UPLOAD_FOLDER, save_filename)
     
     try:
@@ -49,11 +91,11 @@ def upload_file():
         # 3. Extract topics, flashcards, questions across all chunks
         topics, flashcards, questions = process_text_chunks(chunks)
         
-        # 4. Save to Database
-        doc_id = create_document(save_filename, file.filename, page_count, char_count)
-        saved_topics = save_topics(doc_id, topics)
-        saved_flashcards = save_flashcards(doc_id, flashcards)
-        saved_questions = save_questions(doc_id, questions)
+        # 4. Save to Database under user_id
+        doc_id = create_document(save_filename, file.filename, page_count, char_count, user_id=user_id)
+        saved_topics = save_topics(doc_id, topics, user_id=user_id)
+        saved_flashcards = save_flashcards(doc_id, flashcards, user_id=user_id)
+        saved_questions = save_questions(doc_id, questions, user_id=user_id)
         
         return jsonify({
             "message": "File processed successfully!",
@@ -84,62 +126,86 @@ def upload_file():
 
 @api_bp.route('/documents', methods=['GET'])
 def list_documents():
-    docs = get_all_documents()
+    user = get_current_user()
+    docs = get_all_documents(user_id=user['id'])
     return jsonify({"documents": docs}), 200
 
 @api_bp.route('/topics', methods=['GET'])
 def get_topics():
+    user = get_current_user()
+    user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    
     if not doc_id:
-        latest = get_latest_document()
+        latest = get_latest_document(user_id=user_id)
         if not latest:
             return jsonify({"topics": [], "document": None}), 200
         doc_id = latest['id']
         
-    doc = get_document(doc_id)
-    topics = get_topics_by_doc(doc_id)
+    doc = get_document(doc_id, user_id=user_id)
+    topics = get_topics_by_doc(doc_id, user_id=user_id)
     return jsonify({"document": doc, "topics": topics}), 200
 
 @api_bp.route('/flashcards', methods=['GET'])
 def get_flashcards():
+    user = get_current_user()
+    user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    
     if not doc_id:
-        latest = get_latest_document()
+        latest = get_latest_document(user_id=user_id)
         if not latest:
             return jsonify({"flashcards": [], "document": None}), 200
         doc_id = latest['id']
         
-    doc = get_document(doc_id)
-    flashcards = get_flashcards_by_doc(doc_id)
+    doc = get_document(doc_id, user_id=user_id)
+    flashcards = get_flashcards_by_doc(doc_id, user_id=user_id)
     return jsonify({"document": doc, "flashcards": flashcards}), 200
+
+@api_bp.route('/flashcards/<int:card_id>/status', methods=['POST'])
+def handle_flashcard_status(card_id):
+    user = get_current_user()
+    user_id = user['id']
+    data = request.json or {}
+    status = data.get('status', 'new')
+    if status not in ['new', 'know', 'review']:
+        return jsonify({"error": "Invalid status value. Must be 'new', 'know', or 'review'."}), 400
+        
+    update_flashcard_status(card_id, status, user_id=user_id)
+    return jsonify({"message": "Status updated successfully", "card_id": card_id, "status": status}), 200
 
 @api_bp.route('/questions', methods=['GET'])
 @api_bp.route('/quiz', methods=['GET'])
 def get_quiz():
+    user = get_current_user()
+    user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    
     if not doc_id:
-        latest = get_latest_document()
+        latest = get_latest_document(user_id=user_id)
         if not latest:
             return jsonify({"questions": [], "document": None}), 200
         doc_id = latest['id']
         
-    doc = get_document(doc_id)
-    questions = get_questions_by_doc(doc_id)
+    doc = get_document(doc_id, user_id=user_id)
+    questions = get_questions_by_doc(doc_id, user_id=user_id)
     return jsonify({"document": doc, "questions": questions}), 200
 
 @api_bp.route('/quiz/submit', methods=['POST'])
 def submit_quiz():
+    user = get_current_user()
+    user_id = user['id']
     data = request.json or {}
     doc_id = data.get('doc_id')
-    user_answers = data.get('answers', [])  # list of {'question_id': 1, 'selected_option': 'B'}
+    user_answers = data.get('answers', [])
     
     if not doc_id:
-        latest = get_latest_document()
+        latest = get_latest_document(user_id=user_id)
         if not latest:
             return jsonify({"error": "No active document found."}), 400
         doc_id = latest['id']
         
-    all_questions = get_questions_by_doc(doc_id)
+    all_questions = get_questions_by_doc(doc_id, user_id=user_id)
     q_map = {q['id']: q for q in all_questions}
     
     total_questions = len(all_questions)
@@ -170,14 +236,13 @@ def submit_quiz():
     incorrect_count = total_questions - correct_count
     score_percentage = round((correct_count / total_questions) * 100.0, 1)
     
-    # Save to DB
-    attempt_id = save_quiz_attempt(doc_id, total_questions, correct_count, incorrect_count, score_percentage, evaluated_answers)
+    # Save attempt under user_id
+    attempt_id = save_quiz_attempt(doc_id, total_questions, correct_count, incorrect_count, score_percentage, evaluated_answers, user_id=user_id)
     
-    # Calculate Weak Topics (< 60% accuracy)
-    topic_perf = get_topic_performance(doc_id)
+    # Weak topics (<60% accuracy rule)
+    topic_perf = get_topic_performance(doc_id, user_id=user_id)
     weak_topics = [t for t in topic_perf if t['is_weak']]
     
-    # Simple Revision Recommendations based on weak topics
     revision_recommendations = []
     for wt in weak_topics:
         revision_recommendations.append({
@@ -200,15 +265,18 @@ def submit_quiz():
 
 @api_bp.route('/progress', methods=['GET'])
 def get_progress():
+    user = get_current_user()
+    user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    
     if not doc_id:
-        latest = get_latest_document()
+        latest = get_latest_document(user_id=user_id)
         if not latest:
             return jsonify({"progress": None}), 200
         doc_id = latest['id']
         
-    latest_attempt = get_latest_quiz_attempt(doc_id)
-    topic_perf = get_topic_performance(doc_id) if latest_attempt else []
+    latest_attempt = get_latest_quiz_attempt(doc_id, user_id=user_id)
+    topic_perf = get_topic_performance(doc_id, user_id=user_id) if latest_attempt else []
     
     return jsonify({
         "document_id": doc_id,
@@ -218,14 +286,17 @@ def get_progress():
 
 @api_bp.route('/weak-topics', methods=['GET'])
 def get_weak_topics():
+    user = get_current_user()
+    user_id = user['id']
     doc_id = request.args.get('doc_id', type=int)
+    
     if not doc_id:
-        latest = get_latest_document()
+        latest = get_latest_document(user_id=user_id)
         if not latest:
             return jsonify({"weak_topics": [], "revision_recommendations": []}), 200
         doc_id = latest['id']
         
-    topic_perf = get_topic_performance(doc_id)
+    topic_perf = get_topic_performance(doc_id, user_id=user_id)
     weak_topics = [t for t in topic_perf if t['is_weak']]
     
     revision_recommendations = []

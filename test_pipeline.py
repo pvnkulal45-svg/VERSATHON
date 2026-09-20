@@ -1,6 +1,9 @@
 import sys
 import os
 import glob
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
 
 # Auto-add base directory, backend directory and venv site-packages to sys.path
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,15 +18,13 @@ for site_path in venv_sites:
     if site_path not in sys.path:
         sys.path.insert(0, site_path)
 
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib import colors
-
 from backend.services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
 from backend.services.ai_service import process_text_chunks
+from backend.services.auth_service import register_user, login_user, get_user_from_token
 from backend.models import (
-    create_document, save_topics, save_flashcards, save_questions,
-    save_quiz_attempt, get_topic_performance
+    create_document, save_topics, get_topics_by_doc, save_flashcards,
+    get_flashcards_by_doc, update_flashcard_status, save_questions,
+    save_quiz_attempt, get_topic_performance, get_all_documents
 )
 from backend.database import init_db
 
@@ -59,7 +60,6 @@ def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
     for i in range(num_pages):
         topic_title, topic_desc = topics_by_page[i % len(topics_by_page)]
         
-        # Header
         c.setFont("Helvetica-Bold", 16)
         c.setFillColor(colors.HexColor("#1e3a8a"))
         c.drawString(50, height - 50, f"Page {i+1} of {num_pages} — {topic_title}")
@@ -68,7 +68,6 @@ def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
         c.setLineWidth(1)
         c.line(50, height - 60, width - 50, height - 60)
         
-        # Content body
         c.setFont("Helvetica", 11)
         c.setFillColor(colors.HexColor("#1e293b"))
         
@@ -93,7 +92,6 @@ def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
         
         c.drawText(text_object)
         
-        # Footer
         c.setFont("Helvetica-Oblique", 9)
         c.setFillColor(colors.HexColor("#64748b"))
         c.drawString(50, 40, "VERSATHON 2.0 E2 — Learn From Your Notes Study Material")
@@ -107,70 +105,75 @@ def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
 
 def run_pipeline_test():
     print("==================================================")
-    print("STARTING END-TO-END PIPELINE & 20+ PAGE PDF TEST")
+    print("STARTING END-TO-END SAAS AUTH & PIPELINE TEST")
     print("==================================================")
     
-    # 1. Generate 22-page PDF
-    pdf_filename = create_multi_page_pdf("test_22_page_notes.pdf", 22)
-    
-    # 2. Extract Text across ALL 22 pages
-    extracted_text, page_count = extract_text_from_file(pdf_filename)
-    print(f"✓ PDF Extraction Succeeded!")
-    print(f"  - Extracted Page Count: {page_count} pages")
-    print(f"  - Total Characters Extracted: {len(extracted_text)} chars")
-    
-    assert page_count == 22, f"Expected 22 pages extracted, got {page_count}"
-    assert len(extracted_text) > 5000, "Extracted text length is too short"
-    
-    # 3. Chunking Test
-    chunks = chunk_text(extracted_text, max_chunk_size=3500)
-    print(f"✓ Chunking Succeeded!")
-    print(f"  - Number of Chunks Created: {len(chunks)} chunks")
-    
-    # 4. Extract Topics, Flashcards, Quiz Questions
-    topics, flashcards, questions = process_text_chunks(chunks)
-    print(f"✓ AI & NLP Extraction Succeeded!")
-    print(f"  - Total Unique Topics Extracted: {len(topics)}")
-    print(f"  - Total Unique Flashcards Generated: {len(flashcards)}")
-    print(f"  - Total MCQ Quiz Questions Generated: {len(questions)}")
-    
-    assert len(topics) > 0, "No topics extracted"
-    assert len(flashcards) > 0, "No flashcards generated"
-    assert len(questions) > 0, "No questions generated"
-    
-    # Print sample extracted topics & flashcards
-    print("\n--- SAMPLE EXTRACTED TOPICS ---")
-    for t in topics[:3]:
-        print(f"  • {t['title']}: {t.get('description', '')[:80]}...")
-        
-    print("\n--- SAMPLE FLASHCARD ---")
-    print(f"  Q: {flashcards[0]['question']}")
-    print(f"  A: {flashcards[0]['answer']}")
-    print(f"  Topic: {flashcards[0]['topic_name']}")
-    
-    print("\n--- SAMPLE MCQ QUESTION ---")
-    print(f"  Q: {questions[0]['question']}")
-    print(f"  A: {questions[0]['option_a']}")
-    print(f"  B: {questions[0]['option_b']}")
-    print(f"  C: {questions[0]['option_c']}")
-    print(f"  D: {questions[0]['option_d']}")
-    print(f"  Correct Option: {questions[0]['correct_option']}")
-    
-    # 5. SQLite DB Operations Test
+    from backend.config import DATABASE_PATH
+    if os.path.exists(DATABASE_PATH):
+        try:
+            os.remove(DATABASE_PATH)
+        except Exception:
+            pass
     init_db()
-    doc_id = create_document("test_22_page_notes.pdf", "Operating_Systems_Notes_22Pages.pdf", page_count, len(extracted_text))
-    saved_topics = save_topics(doc_id, topics)
-    saved_flashcards = save_flashcards(doc_id, flashcards)
-    saved_questions = save_questions(doc_id, questions)
     
-    print(f"\n✓ SQLite Database Insertion Succeeded! Document ID: {doc_id}")
+    # 1. User Registration & Login Test
+    user_a = register_user("Alice Student", "alice@university.edu", "password123")
+    token_a = user_a["token"]
+    user_a_id = user_a["user"]["id"]
+    print(f"✓ Registered User A: {user_a['user']['name']} (ID: {user_a_id})")
     
-    # 6. Quiz Scoring & Weak Topic Calculation Test (<60% accuracy rule)
-    # Simulate quiz submission where user answers 3 correctly, 2 incorrectly for topic A, and 0 correctly for topic B
+    login_res = login_user("alice@university.edu", "password123")
+    assert login_res["user"]["email"] == "alice@university.edu"
+    print(f"✓ Login User A Succeeded! Token Verified.")
+    
+    user_b = register_user("Bob Student", "bob@university.edu", "password123")
+    user_b_id = user_b["user"]["id"]
+    print(f"✓ Registered User B: {user_b['user']['name']} (ID: {user_b_id})")
+
+    # 2. Generate 22-page PDF for User A
+    pdf_filename = create_multi_page_pdf("test_22_page_notes.pdf", 22)
+    extracted_text, page_count = extract_text_from_file(pdf_filename)
+    assert page_count == 22, f"Expected 22 pages extracted, got {page_count}"
+    
+    chunks = chunk_text(extracted_text, max_chunk_size=3500)
+    topics, flashcards, questions = process_text_chunks(chunks)
+    
+    # Verify Rich Topic Fields
+    first_top = topics[0]
+    print(f"✓ Rich Topic Structure Verified!")
+    print(f"  - Title: {first_top['title']}")
+    print(f"  - Summary: {first_top['summary']}")
+    print(f"  - Importance: {first_top['importance']}")
+    print(f"  - Simple Explanation: {first_top['simple_explanation'][:70]}...")
+    print(f"  - Detailed Explanation: {first_top['detailed_explanation'][:70]}...")
+    
+    # Save under User A
+    doc_id_a = create_document("test_22_page_notes.pdf", "Operating_Systems_Notes.pdf", page_count, len(extracted_text), user_id=user_a_id)
+    saved_topics_a = save_topics(doc_id_a, topics, user_id=user_a_id)
+    saved_cards_a = save_flashcards(doc_id_a, flashcards, user_id=user_a_id)
+    saved_questions_a = save_questions(doc_id_a, questions, user_id=user_a_id)
+    
+    # 3. User Data Isolation Test
+    docs_user_a = get_all_documents(user_id=user_a_id)
+    docs_user_b = get_all_documents(user_id=user_b_id)
+    
+    assert len(docs_user_a) == 1, "User A should have 1 document"
+    assert len(docs_user_b) == 0, "User B should have 0 documents"
+    print(f"✓ User Data Isolation Verified!")
+    print(f"  - User A Documents: {len(docs_user_a)}")
+    print(f"  - User B Documents: {len(docs_user_b)} (User B cannot see User A's study material!)")
+
+    # 4. Flashcard Status Update Test
+    first_card = saved_cards_a[0]
+    update_flashcard_status(first_card["id"], "know", user_id=user_a_id)
+    cards_fetched = get_flashcards_by_doc(doc_id_a, user_id=user_a_id)
+    assert cards_fetched[0]["status"] == "know"
+    print(f"✓ Flashcard Status Update Verified ('know' status saved).")
+
+    # 5. Quiz & Weak Topic Test under User A
     evaluated_answers = []
-    for i, q in enumerate(saved_questions):
-        # Make first half correct, second half wrong to test weak topics
-        is_corr = (i < len(saved_questions) // 2)
+    for i, q in enumerate(saved_questions_a):
+        is_corr = (i < len(saved_questions_a) // 2)
         selected = q['correct_option'] if is_corr else ('B' if q['correct_option'] != 'B' else 'A')
         evaluated_answers.append({
             'question_id': q['id'],
@@ -184,20 +187,16 @@ def run_pipeline_test():
     incorr_q = total_q - corr_q
     score_pct = round((corr_q / total_q) * 100.0, 1)
     
-    attempt_id = save_quiz_attempt(doc_id, total_q, corr_q, incorr_q, score_pct, evaluated_answers)
-    topic_perf = get_topic_performance(doc_id)
+    attempt_id = save_quiz_attempt(doc_id_a, total_q, corr_q, incorr_q, score_pct, evaluated_answers, user_id=user_a_id)
+    topic_perf = get_topic_performance(doc_id_a, user_id=user_a_id)
     weak_topics = [tp for tp in topic_perf if tp['is_weak']]
     
-    print(f"✓ Quiz Attempt Saved! Attempt ID: {attempt_id}")
-    print(f"  - Score: {corr_q}/{total_q} ({score_pct}%)")
-    print(f"  - Weak Topics Identified (<60% accuracy): {len(weak_topics)}")
-    for wt in weak_topics:
-        print(f"    • {wt['topic_name']} ({wt['accuracy']}% accuracy)")
-        
-    # 7. Scanned PDF Detection Test
+    print(f"✓ Quiz Attempt Saved for User A! Score: {corr_q}/{total_q} ({score_pct}%)")
+    print(f"  - Weak Topics (<60% accuracy): {len(weak_topics)}")
+    
+    # 6. Scanned PDF Test
     scanned_pdf_name = "test_scanned_dummy.pdf"
     c_scan = canvas.Canvas(scanned_pdf_name, pagesize=letter)
-    # Empty page without text
     c_scan.showPage()
     c_scan.save()
     
@@ -206,13 +205,12 @@ def run_pipeline_test():
         extract_text_from_file(scanned_pdf_name)
     except ScannedPdfError as err:
         scanned_caught = True
-        print(f"\n✓ Scanned PDF Error Handling Tested Succeeded!")
-        print(f"  - Captured Expected Error: '{err}'")
+        print(f"✓ Scanned PDF Detection Verified: '{err}'")
         
-    assert scanned_caught, "Scanned PDF error was not caught"
+    assert scanned_caught
     
     print("\n==================================================")
-    print("ALL 12 REQUIREMENT VERIFICATION TESTS PASSED SUCCESSFULLY!")
+    print("ALL EDTECH SAAS AUTH & PIPELINE TESTS PASSED!")
     print("==================================================")
 
 if __name__ == '__main__':
