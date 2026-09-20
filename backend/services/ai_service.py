@@ -29,12 +29,12 @@ def heuristic_extract_topics_and_content(text: str):
     Extracts topics, flashcards, and MCQs directly from document text.
     """
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 30]
-    
+    paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 20]
+    if not paragraphs and lines:
+        paragraphs = lines
+        
     # 1. Topic Identification
     potential_headings = []
-    
-    # Check for title-like lines or numbered sections
     heading_regex = re.compile(r'^(?:Page\s+\d+\s+(?:of\s+\d+)?\s*[-—:]\s*|MODULE\s+SECTION\s+\d+:?\s*|#+|\d+[\.\)]|[A-Z\s]{4,30}:?|Chapter\s+\d+|Section\s+\d+|Unit\s+\d+)\s*(.+)$', re.IGNORECASE)
     
     for line in lines:
@@ -42,7 +42,6 @@ def heuristic_extract_topics_and_content(text: str):
             match = heading_regex.match(line)
             if match:
                 title = match.group(1).strip('#*:— ').title()
-                # Clean prefix numbers
                 title = re.sub(r'^\d+\s*[-—:]\s*', '', title).strip().title()
                 if 3 < len(title) < 50 and title not in potential_headings:
                     potential_headings.append(title)
@@ -53,10 +52,9 @@ def heuristic_extract_topics_and_content(text: str):
                 if 3 < len(title) < 50 and title not in potential_headings:
                     potential_headings.append(title)
                     
-    # Fallback to key phrase extraction if no explicit headings found
+    # Fallback key concept extraction
     if len(potential_headings) < 3:
-        # Look for sentences with key concepts ("X is", "X refers to", "X consists of")
-        concept_regex = re.compile(r'([A-Z][a-zA-Z0-9\s]{2,25})\s+(?:is|refers to|consists of|manages|provides|enables)', re.IGNORECASE)
+        concept_regex = re.compile(r'([A-Z][a-zA-Z0-9\s]{2,25})\s+(?:is|are|refers to|consists of|manages|provides|enables)', re.IGNORECASE)
         for p in paragraphs:
             matches = concept_regex.findall(p)
             for m in matches:
@@ -64,16 +62,13 @@ def heuristic_extract_topics_and_content(text: str):
                 if 3 < len(clean_m) < 40 and clean_m not in potential_headings:
                     potential_headings.append(clean_m)
                     
-    # Ultimate fallback topics if document is unstructured
     default_topics = ["Core Concepts", "Key Definitions", "System Features", "Architecture & Process", "Advanced Mechanics"]
     for dt in default_topics:
         if len(potential_headings) < 4 and dt not in potential_headings:
             potential_headings.append(dt)
             
-    # Keep top 4-7 topics
     topics_list = []
-    for th in potential_headings[:7]:
-        # Find related sentence for description
+    for th in potential_headings[:8]:
         desc = f"Key concepts and definitions related to {th} based on study notes."
         for p in paragraphs:
             if th.lower() in p.lower():
@@ -92,14 +87,12 @@ def heuristic_extract_topics_and_content(text: str):
     flashcards_list = []
     seen_questions = set()
     
-    # Definition patterns: "X is ...", "X defined as ...", "The main role of X is ..."
     def_pattern = re.compile(r'([A-Z][a-zA-Z0-9\s-]{2,30})\s+(is|are|refers to|is defined as|enables|manages|handles)\s+([^.\n]{15,200})', re.IGNORECASE)
     
     for p in paragraphs:
         for match in def_pattern.finditer(p):
             subject, verb, explanation = match.groups()
             subject = subject.strip()
-            # Clean up subject leading words
             subject = re.sub(r'^(?:An?|The|Page \d+ of \d+ —?|Module Section \d+:?)\s+', '', subject, flags=re.IGNORECASE).strip()
             explanation = explanation.strip()
             
@@ -111,8 +104,7 @@ def heuristic_extract_topics_and_content(text: str):
                 continue
             seen_questions.add(q_text)
             
-            # Match with closest topic
-            assigned_topic = topics_list[0]["title"]
+            assigned_topic = topics_list[0]["title"] if topics_list else "General"
             for top in topics_list:
                 if top["title"].lower() in p.lower() or subject.lower() in top["title"].lower():
                     assigned_topic = top["title"]
@@ -125,18 +117,18 @@ def heuristic_extract_topics_and_content(text: str):
                 "topic_name": assigned_topic
             })
 
-    # If flashcards are fewer than 6, build Q&A from key sentences
+    # Fallback to sentence parsing if flashcards < 6
     if len(flashcards_list) < 6:
         for i, p in enumerate(paragraphs):
-            sentences = [s.strip() for s in p.split('.') if len(s.strip()) > 30]
+            sentences = [s.strip() for s in p.split('.') if len(s.strip()) > 25]
             for s in sentences:
                 words = s.split()
-                if len(words) >= 6:
-                    key_term = " ".join(words[:3])
-                    q_text = f"Explain the concept of '{key_term}' in this context."
+                if len(words) >= 4:
+                    key_term = " ".join(words[:3]).strip(":,.-")
+                    q_text = f"What does the notes state regarding '{key_term}'?"
                     if q_text not in seen_questions:
                         seen_questions.add(q_text)
-                        assigned_topic = topics_list[i % len(topics_list)]["title"]
+                        assigned_topic = topics_list[i % len(topics_list)]["title"] if topics_list else "General"
                         flashcards_list.append({
                             "question": q_text,
                             "answer": s + ".",
@@ -147,7 +139,6 @@ def heuristic_extract_topics_and_content(text: str):
     questions_list = []
     seen_mcqs = set()
     
-    # Collect vocabulary/terms across document for distractor generation
     all_terms = []
     for fc in flashcards_list:
         words = re.findall(r'\b[A-Za-z]{4,20}\b', fc["answer"])
@@ -157,7 +148,7 @@ def heuristic_extract_topics_and_content(text: str):
         all_terms.extend(["Memory allocation", "Data structure", "Execution cycle", "Buffer overflow", "Thread safety", "Resource lock", "Cache hierarchy", "Protocol stack"])
 
     for i, fc in enumerate(flashcards_list):
-        if len(questions_list) >= 12:
+        if len(questions_list) >= 15:
             break
             
         q_text = fc["question"]
@@ -169,11 +160,9 @@ def heuristic_extract_topics_and_content(text: str):
         if len(correct_ans) > 90:
             correct_ans = correct_ans[:90] + "..."
             
-        # Create 3 plausible distractors
         distractors = []
         topic_name = fc["topic_name"]
         
-        # Craft smart contextual distractors
         d_templates = [
             f"Manages external device drivers and hardware protocols.",
             f"Allocates static file storage in non-volatile memory.",
@@ -194,7 +183,6 @@ def heuristic_extract_topics_and_content(text: str):
             if distractor_text not in distractors:
                 distractors.append(distractor_text)
                 
-        # Randomize options position
         options = [correct_ans] + distractors
         random.shuffle(options)
         
@@ -211,6 +199,32 @@ def heuristic_extract_topics_and_content(text: str):
             "explanation": f"Based on the notes under '{topic_name}': {fc['answer']}",
             "topic_name": topic_name
         })
+
+    # Ultimate Quiz Safeguard: If questions_list is still empty, build from topics
+    if len(questions_list) == 0 and topics_list:
+        for top in topics_list:
+            q_text = f"What is the primary focus of '{top['title']}'?"
+            if q_text not in seen_mcqs:
+                seen_mcqs.add(q_text)
+                correct_ans = top.get('description', f"Core concepts and definitions related to {top['title']}.")
+                distractors = [
+                    f"Manages external hardware protocols.",
+                    f"Allocates static file storage in non-volatile memory.",
+                    f"Synchronizes background network socket communication."
+                ]
+                options = [correct_ans] + distractors
+                random.shuffle(options)
+                correct_letter = ['A', 'B', 'C', 'D'][options.index(correct_ans)]
+                questions_list.append({
+                    "question": q_text,
+                    "option_a": options[0],
+                    "option_b": options[1],
+                    "option_c": options[2],
+                    "option_d": options[3],
+                    "correct_option": correct_letter,
+                    "explanation": f"Based on notes for '{top['title']}': {correct_ans}",
+                    "topic_name": top['title']
+                })
 
     return topics_list, flashcards_list, questions_list
 
@@ -265,7 +279,6 @@ Do NOT invent information outside the study notes. Ensure correct_option is one 
     )
     
     content = response.text.strip()
-    # Strip markdown block quotes if present
     if content.startswith("```json"):
         content = content[7:]
     if content.endswith("```"):
@@ -340,9 +353,14 @@ def process_text_chunks(chunks: list):
             }
     final_questions = list(unique_questions.values())
     
-    # Fallback if empty
-    if not final_topics:
+    # Fallback if any category is empty
+    if not final_topics or not final_flashcards or not final_questions:
         h_top, h_fc, h_q = heuristic_extract_topics_and_content("\n\n".join(chunks))
-        return h_top, h_fc, h_q
-        
+        if not final_topics:
+            final_topics = h_top
+        if not final_flashcards:
+            final_flashcards = h_fc
+        if not final_questions:
+            final_questions = h_q
+            
     return final_topics, final_flashcards, final_questions
