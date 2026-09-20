@@ -8,6 +8,8 @@ import Flashcards from './components/Flashcards';
 import QuizView from './components/QuizView';
 import ScoreModal from './components/ScoreModal';
 import WeakTopics from './components/WeakTopics';
+import ExamTomorrowMode from './components/ExamTomorrowMode';
+import StudentAssistant from './components/StudentAssistant';
 import { 
   getCurrentUser, setAuthToken, getAuthToken,
   fetchDocuments, fetchTopics, fetchFlashcards, 
@@ -237,6 +239,7 @@ export default function App() {
 
               {activeTab === 'flashcards' && (
                 <Flashcards 
+                  docId={activeDocId}
                   flashcards={flashcards} 
                   onNavigateToUpload={() => setActiveTab('upload')}
                 />
@@ -258,6 +261,21 @@ export default function App() {
                   onTakeQuiz={() => setActiveTab('quiz')}
                 />
               )}
+
+              {activeTab === 'exam-mode' && (
+                <ExamTomorrowMode 
+                  user={currentUser}
+                  activeDocId={activeDocId}
+                  documents={documents}
+                  topics={topics}
+                  flashcards={flashcards}
+                  questions={questions}
+                  progress={progress}
+                  weakTopics={weakTopics}
+                  revisionRecs={revisionRecs}
+                  setActiveTab={setActiveTab}
+                />
+              )}
             </>
           )}
         </main>
@@ -277,6 +295,19 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Student Assistant Guide */}
+      <StudentAssistant 
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        user={currentUser}
+        documents={documents}
+        topics={topics}
+        flashcards={flashcards}
+        questions={questions}
+        progress={progress}
+        weakTopics={weakTopics}
+      />
     </div>
   );
 }

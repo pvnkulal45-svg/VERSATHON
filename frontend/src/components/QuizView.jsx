@@ -13,7 +13,7 @@ export default function QuizView({ docId, onQuizSubmitted }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (setupConfig && docId) {
+    if (setupConfig) {
       loadQuizQuestions(setupConfig.count, setupConfig.difficulty);
     }
   }, [setupConfig, docId]);

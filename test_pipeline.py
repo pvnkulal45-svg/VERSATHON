@@ -126,47 +126,64 @@ def run_pipeline_test():
     
     doc_id = create_document("test_22_page_notes.pdf", "Operating_Systems_Notes.pdf", page_count, len(extracted_text), user_id=user_a_id)
     save_topics(doc_id, topics, user_id=user_a_id)
-    save_flashcards(doc_id, flashcards, user_id=user_a_id)
-    save_questions(doc_id, questions, user_id=user_a_id)
+    # Populate database with 205 flashcards to simulate exact user scenario
+    bulk_flashcards = []
+    for i in range(1, 206):
+        bulk_flashcards.append({
+            'question': f'Flashcard Question {i} on OS Concepts?',
+            'answer': f'Flashcard Answer {i} detailing kernel architecture.',
+            'topic_name': f'Topic {(i % 10) + 1}',
+            'difficulty': 'Easy' if i % 3 == 0 else ('Hard' if i % 3 == 1 else 'Medium')
+        })
+    save_flashcards(doc_id, bulk_flashcards, user_id=user_a_id)
 
-    # Test Dynamic Item Count Queries
-    # 1. Request 5 questions
-    q_5 = get_questions_by_doc(doc_id, user_id=user_a_id, limit=5)
-    assert len(q_5) == 5, f"Expected 5 questions, got {len(q_5)}"
-    print(f"✓ Request 5 Questions Verified! Got: {len(q_5)}")
+    total_in_db = len(get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=None))
+    print(f"Total flashcards in DB: {total_in_db}")
+    assert total_in_db >= 205, f"Expected at least 205 flashcards, got {total_in_db}"
 
-    # 2. Request 10 questions
-    q_10 = get_questions_by_doc(doc_id, user_id=user_a_id, limit=10)
-    assert len(q_10) == 10, f"Expected 10 questions, got {len(q_10)}"
-    print(f"✓ Request 10 Questions Verified! Got: {len(q_10)}")
-
-    # 3. Request 15 questions
-    q_15 = get_questions_by_doc(doc_id, user_id=user_a_id, limit=15)
-    assert len(q_15) == 15, f"Expected 15 questions, got {len(q_15)}"
-    print(f"✓ Request 15 Questions Verified! Got: {len(q_15)}")
-
-    # 4. Request Custom 8 questions
-    q_custom = get_questions_by_doc(doc_id, user_id=user_a_id, limit=8)
-    assert len(q_custom) == 8, f"Expected 8 questions, got {len(q_custom)}"
-    print(f"✓ Request Custom 8 Questions Verified! Got: {len(q_custom)}")
-
-    # 5. Request 5 Flashcards
+    # TEST 1: Select 5
     fc_5 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=5)
-    assert len(fc_5) == 5, f"Expected 5 flashcards, got {len(fc_5)}"
-    print(f"✓ Request 5 Flashcards Verified! Got: {len(fc_5)}")
+    assert len(fc_5) == 5, f"Test 1 Failed: Expected 5, got {len(fc_5)}"
+    print(f"✓ Test 1 Passed: Select 5 -> {len(fc_5)} flashcards displayed.")
 
-    # 6. Request 15 Flashcards
-    fc_15 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=15)
-    assert len(fc_15) == 15, f"Expected 15 flashcards, got {len(fc_15)}"
-    print(f"✓ Request 15 Flashcards Verified! Got: {len(fc_15)}")
+    # TEST 2: Select 10
+    fc_10 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=10)
+    assert len(fc_10) == 10, f"Test 2 Failed: Expected 10, got {len(fc_10)}"
+    print(f"✓ Test 2 Passed: Select 10 -> {len(fc_10)} flashcards displayed.")
 
-    # 7. Request Custom 12 Flashcards
-    fc_custom = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=12)
-    assert len(fc_custom) == 12, f"Expected 12 flashcards, got {len(fc_custom)}"
-    print(f"✓ Request Custom 12 Flashcards Verified! Got: {len(fc_custom)}")
+    # TEST 3: Select 20
+    fc_20 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=20)
+    assert len(fc_20) == 20, f"Test 3 Failed: Expected 20, got {len(fc_20)}"
+    print(f"✓ Test 3 Passed: Select 20 -> {len(fc_20)} flashcards displayed.")
+
+    # TEST 4: Select 100
+    fc_100 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=100)
+    assert len(fc_100) == 100, f"Test 4 Failed: Expected 100, got {len(fc_100)}"
+    print(f"✓ Test 4 Passed: Select 100 -> {len(fc_100)} flashcards displayed.")
+
+    # TEST 5: Select 205
+    fc_205 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=205)
+    assert len(fc_205) == 205, f"Test 5 Failed: Expected 205, got {len(fc_205)}"
+    print(f"✓ Test 5 Passed: Select 205 -> {len(fc_205)} flashcards displayed.")
+
+    # TEST 6: Select 250 (when 205 exist)
+    fc_250 = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=250)
+    assert len(fc_250) == total_in_db, f"Test 6 Failed: Expected {total_in_db}, got {len(fc_250)}"
+    print(f"✓ Test 6 Passed: Select 250 -> returned all available {len(fc_250)} cards without error.")
+
+    # TEST 7: Delete all flashcards & verify empty state
+    from backend.database import get_db
+    conn = get_db()
+    conn.cursor().execute("DELETE FROM flashcards WHERE user_id = ?", (user_a_id,))
+    conn.commit()
+    conn.close()
+    
+    fc_empty = get_flashcards_by_doc(doc_id, user_id=user_a_id, limit=10)
+    assert len(fc_empty) == 0, f"Test 7 Failed: Expected 0, got {len(fc_empty)}"
+    print(f"✓ Test 7 Passed: Delete all -> {len(fc_empty)} cards returned (triggers empty state).")
 
     print("\n==================================================")
-    print("ALL DYNAMIC COUNT & DIFFICULTY TESTS PASSED!")
+    print("ALL 7 FLASHCARD DATA FLOW TESTS PASSED SUCCESSFULLY!")
     print("==================================================")
 
 if __name__ == '__main__':

@@ -1,12 +1,13 @@
 import React from 'react';
 import { 
   BookOpen, LayoutDashboard, FileText, Layers, HelpCircle, 
-  AlertTriangle, RefreshCw, Settings, LogOut, User, Menu, X, FilePlus 
+  AlertTriangle, RefreshCw, Settings, LogOut, User, Menu, X, FilePlus, Target 
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, user, onLogout, mobileOpen, setMobileOpen }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'exam-mode', label: '🎯 Exam Tomorrow Mode', icon: Target },
     { id: 'upload', label: 'My Notes & Upload', icon: FilePlus },
     { id: 'topics', label: 'Important Topics', icon: BookOpen },
     { id: 'flashcards', label: 'Flashcards', icon: Layers },

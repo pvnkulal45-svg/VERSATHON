@@ -153,22 +153,21 @@ def get_flashcards():
     count = request.args.get('count', type=int)
     difficulty = request.args.get('difficulty', type=str)
     
-    if not doc_id:
-        latest = get_latest_document(user_id=user_id)
-        if not latest:
-            return jsonify({"flashcards": [], "document": None, "total_available": 0}), 200
-        doc_id = latest['id']
-        
-    doc = get_document(doc_id, user_id=user_id)
-    all_cards = get_flashcards_by_doc(doc_id, user_id=user_id)
+    doc = get_document(doc_id, user_id=user_id) if doc_id else get_latest_document(user_id=user_id)
+    
+    # Calculate total available flashcards for user (and doc if specified)
+    all_cards = get_flashcards_by_doc(doc_id=doc_id, user_id=user_id, randomize=False)
     total_available = len(all_cards)
     
-    requested_cards = get_flashcards_by_doc(doc_id, user_id=user_id, limit=count, difficulty=difficulty)
+    # Retrieve requested sample of cards
+    requested_cards = get_flashcards_by_doc(doc_id=doc_id, user_id=user_id, limit=count, difficulty=difficulty, randomize=True)
+    
     return jsonify({
         "document": doc,
         "flashcards": requested_cards,
         "total_available": total_available,
-        "requested_count": count or total_available
+        "requested_count": count or total_available,
+        "returned_count": len(requested_cards)
     }), 200
 
 @api_bp.route('/flashcards/<int:card_id>/status', methods=['POST'])
@@ -192,22 +191,18 @@ def get_quiz():
     count = request.args.get('count', type=int)
     difficulty = request.args.get('difficulty', type=str)
     
-    if not doc_id:
-        latest = get_latest_document(user_id=user_id)
-        if not latest:
-            return jsonify({"questions": [], "document": None, "total_available": 0}), 200
-        doc_id = latest['id']
-        
-    doc = get_document(doc_id, user_id=user_id)
-    all_questions = get_questions_by_doc(doc_id, user_id=user_id)
+    doc = get_document(doc_id, user_id=user_id) if doc_id else get_latest_document(user_id=user_id)
+    
+    all_questions = get_questions_by_doc(doc_id=doc_id, user_id=user_id, randomize=False)
     total_available = len(all_questions)
     
-    requested_questions = get_questions_by_doc(doc_id, user_id=user_id, limit=count, difficulty=difficulty)
+    requested_questions = get_questions_by_doc(doc_id=doc_id, user_id=user_id, limit=count, difficulty=difficulty, randomize=True)
     return jsonify({
         "document": doc,
         "questions": requested_questions,
         "total_available": total_available,
-        "requested_count": count or total_available
+        "requested_count": count or total_available,
+        "returned_count": len(requested_questions)
     }), 200
 
 @api_bp.route('/generate-more', methods=['POST'])

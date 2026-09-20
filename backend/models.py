@@ -146,14 +146,17 @@ def save_flashcards(doc_id, flashcards, user_id=1):
     conn.close()
     return saved
 
-def get_flashcards_by_doc(doc_id, user_id=None, limit=None, difficulty=None):
+def get_flashcards_by_doc(doc_id=None, user_id=None, limit=None, difficulty=None, randomize=True):
     conn = get_db()
     cursor = conn.cursor()
     
-    query = 'SELECT * FROM flashcards WHERE document_id = ?'
-    params = [doc_id]
+    query = 'SELECT * FROM flashcards WHERE 1=1'
+    params = []
     
-    if user_id:
+    if doc_id is not None:
+        query += ' AND document_id = ?'
+        params.append(doc_id)
+    if user_id is not None:
         query += ' AND user_id = ?'
         params.append(user_id)
         
@@ -161,8 +164,11 @@ def get_flashcards_by_doc(doc_id, user_id=None, limit=None, difficulty=None):
         query += ' AND difficulty = ?'
         params.append(difficulty)
         
-    query += ' ORDER BY id ASC'
-    
+    if randomize:
+        query += ' ORDER BY RANDOM()'
+    else:
+        query += ' ORDER BY id ASC'
+        
     if limit and isinstance(limit, int) and limit > 0:
         query += ' LIMIT ?'
         params.append(limit)
@@ -170,17 +176,24 @@ def get_flashcards_by_doc(doc_id, user_id=None, limit=None, difficulty=None):
     cursor.execute(query, tuple(params))
     cards = cursor.fetchall()
     
-    # Fallback if filtered difficulty returns 0 cards
+    # Fallback if filtered difficulty returns 0 cards, but user/doc has flashcards
     if not cards and difficulty and difficulty != 'Mixed':
-        fallback_query = 'SELECT * FROM flashcards WHERE document_id = ?'
-        fallback_params = [doc_id]
-        if user_id:
+        fallback_query = 'SELECT * FROM flashcards WHERE 1=1'
+        fallback_params = []
+        if doc_id is not None:
+            fallback_query += ' AND document_id = ?'
+            fallback_params.append(doc_id)
+        if user_id is not None:
             fallback_query += ' AND user_id = ?'
             fallback_params.append(user_id)
-        fallback_query += ' ORDER BY id ASC'
-        if limit:
+        if randomize:
+            fallback_query += ' ORDER BY RANDOM()'
+        else:
+            fallback_query += ' ORDER BY id ASC'
+        if limit and isinstance(limit, int) and limit > 0:
             fallback_query += ' LIMIT ?'
             fallback_params.append(limit)
+            
         cursor.execute(fallback_query, tuple(fallback_params))
         cards = cursor.fetchall()
 
@@ -236,19 +249,25 @@ def save_questions(doc_id, questions, user_id=1):
     conn.close()
     return saved
 
-def get_questions_by_doc(doc_id, user_id=None, limit=None, difficulty=None):
+def get_questions_by_doc(doc_id=None, user_id=None, limit=None, difficulty=None, randomize=True):
     conn = get_db()
     cursor = conn.cursor()
     
-    query = 'SELECT * FROM questions WHERE document_id = ?'
-    params = [doc_id]
+    query = 'SELECT * FROM questions WHERE 1=1'
+    params = []
     
-    if user_id:
+    if doc_id is not None:
+        query += ' AND document_id = ?'
+        params.append(doc_id)
+    if user_id is not None:
         query += ' AND user_id = ?'
         params.append(user_id)
         
-    query += ' ORDER BY id ASC'
-    
+    if randomize:
+        query += ' ORDER BY RANDOM()'
+    else:
+        query += ' ORDER BY id ASC'
+        
     if limit and isinstance(limit, int) and limit > 0:
         query += ' LIMIT ?'
         params.append(limit)

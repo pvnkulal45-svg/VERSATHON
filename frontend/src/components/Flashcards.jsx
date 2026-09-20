@@ -20,7 +20,7 @@ export default function Flashcards({ docId, onNavigateToUpload }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (setupConfig && docId) {
+    if (setupConfig) {
       loadCards(setupConfig.count, setupConfig.difficulty);
     }
   }, [setupConfig, docId]);

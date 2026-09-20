@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   FileText, BookOpen, Layers, HelpCircle, AlertTriangle, 
-  CheckCircle2, ArrowRight, RefreshCw, Trophy, Sparkles, FilePlus 
+  CheckCircle2, ArrowRight, RefreshCw, Trophy, Sparkles, FilePlus, Target, Zap 
 } from 'lucide-react';
 
 export default function Dashboard({ 
@@ -58,6 +58,31 @@ export default function Dashboard({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Prominent Exam Tomorrow Mode Banner */}
+      <div className="glass-card rounded-3xl p-6 sm:p-7 border border-amber-500/30 bg-gradient-to-r from-amber-950/40 via-slate-950 to-slate-900 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16"></div>
+        <div className="space-y-1 relative z-10">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+            <Target className="w-4 h-4 text-amber-400" />
+            <span>Time-Allocated Preparation</span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-display font-extrabold text-white flex items-center gap-2">
+            🎯 Exam Tomorrow?
+          </h2>
+          <p className="text-slate-300 text-xs sm:text-sm max-w-xl leading-relaxed">
+            Get a focused, time-allocated prep session (30 Min, 1 Hr, 2 Hr, 4 Hr) based on your notes, weak topics, and available study progress.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setActiveTab('exam-mode')}
+          className="w-full md:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-extrabold text-sm transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+        >
+          <Zap className="w-4 h-4 fill-current" />
+          <span>Start Exam Mode →</span>
+        </button>
       </div>
 
       {/* Statistics Cards */}

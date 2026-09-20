@@ -17,20 +17,20 @@ export default function FlashcardSetup({ onStartFlashcards }) {
     const val = e.target.value;
     setCustomValue(val);
     const parsed = parseInt(val, 10);
-    if (!val || isNaN(parsed) || parsed < 1 || parsed > 50) {
-      setValidationError('Please enter a number between 1 and 50.');
+    if (!val || isNaN(parsed) || parsed < 1 || parsed > 500) {
+      setValidationError('Please enter a number between 1 and 500.');
     } else {
       setValidationError('');
     }
   };
 
   const effectiveCount = getEffectiveCount();
-  const isValid = effectiveCount >= 1 && effectiveCount <= 50;
+  const isValid = effectiveCount >= 1 && effectiveCount <= 500;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!isValid) {
-      setValidationError('Please enter a number between 1 and 50.');
+      setValidationError('Please enter a number between 1 and 500.');
       return;
     }
     if (onStartFlashcards) {
@@ -89,8 +89,8 @@ export default function FlashcardSetup({ onStartFlashcards }) {
                 <input
                   type="number"
                   min="1"
-                  max="50"
-                  placeholder="Enter custom count (e.g. 8, 12, 25)"
+                  max="500"
+                  placeholder="Enter custom count (e.g. 10, 50, 100, 205)"
                   value={customValue}
                   onChange={handleCustomChange}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
