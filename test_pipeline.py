@@ -2,9 +2,11 @@ import sys
 import os
 import glob
 
-# Auto-add backend directory and venv site-packages to sys.path
+# Auto-add base directory, backend directory and venv site-packages to sys.path
 base_dir = os.path.dirname(os.path.abspath(__file__))
 backend_dir = os.path.join(base_dir, 'backend')
+if base_dir not in sys.path:
+    sys.path.insert(0, base_dir)
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
@@ -17,22 +19,13 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-try:
-    from backend.services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
-    from backend.services.ai_service import process_text_chunks
-    from backend.models import (
-        create_document, save_topics, save_flashcards, save_questions,
-        save_quiz_attempt, get_topic_performance
-    )
-    from backend.database import init_db
-except (ModuleNotFoundError, ImportError):
-    from services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
-    from services.ai_service import process_text_chunks
-    from models import (
-        create_document, save_topics, save_flashcards, save_questions,
-        save_quiz_attempt, get_topic_performance
-    )
-    from database import init_db
+from backend.services.pdf_service import extract_text_from_file, chunk_text, ScannedPdfError
+from backend.services.ai_service import process_text_chunks
+from backend.models import (
+    create_document, save_topics, save_flashcards, save_questions,
+    save_quiz_attempt, get_topic_performance
+)
+from backend.database import init_db
 
 def create_multi_page_pdf(filename="sample_os_notes_22pages.pdf", num_pages=22):
     c = canvas.Canvas(filename, pagesize=letter)
